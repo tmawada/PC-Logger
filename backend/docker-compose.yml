@@ -21,25 +21,37 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
-  # backend:
+  backend:
 
-  #   build: .
+    build: .
 
-  #   container_name: lab-backend
+    container_name: lab-backend
 
-  #   restart: always
+    restart: always
 
-  #   depends_on:
-  #     - postgres
+    depends_on:
+      - postgres
 
-  #   ports:
-  #     - "5000:5000"
+    ports:
+      - "5000:5000"
 
-  #   environment:
-  #     DB_HOST: postgres
-  #     DB_NAME: ${DB_NAME}
-  #     DB_USER: ${DB_USER}
-  #     DB_PASSWORD: ${DB_PASSWORD}
+    environment:
+      DB_HOST: postgres
+      DB_NAME: ${DB_NAME}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: lab-pgadmin
+    restart: always
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD}
+    ports:
+      - "8080:80"
+    depends_on:
+      - postgres
 
 volumes:
   postgres_data:

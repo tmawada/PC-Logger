@@ -1,0 +1,144 @@
+{
+  "info": {
+    "name": "PCLogger API",
+    "description": "PC event logging API. Import this collection in Postman, then update the base_url variable if needed.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:5000",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Dashboard (HTML)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/",
+          "host": ["{{base_url}}"],
+          "path": [""]
+        },
+        "description": "Renders the web dashboard (HTML, not JSON)."
+      }
+    },
+    {
+      "name": "Create Log",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"hostname\": \"LAB-01\",\n    \"event_type\": \"Boot\",\n    \"message\": \"Operating System Started\",\n    \"created_at\": \"{{created_at}}\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/log",
+          "host": ["{{base_url}}"],
+          "path": ["api", "log"]
+        },
+        "description": "Receive a PC event log from an agent.\n\nValid event_type values: Boot, Shutdown, Restart, Crash, Wake, Sleep.\ncreated_at must be ISO 8601 (e.g. 2026-08-06T08:00:00). A pre-request script fills it with the current time.",
+        "event": [
+          {
+            "listen": "prerequest",
+            "script": {
+              "type": "text/javascript",
+              "exec": [
+                "pm.variables.set('created_at', new Date().toISOString().slice(0, 19));"
+              ]
+            }
+          },
+          {
+            "listen": "test",
+            "script": {
+              "type": "text/javascript",
+              "exec": [
+                "pm.test('Status is 201', function () { pm.response.to.have.status(201); });",
+                "pm.test('Has success flag', function () { var json = pm.response.json(); pm.expect(json.success).to.eql(true); });"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "List Logs",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/logs",
+          "host": ["{{base_url}}"],
+          "path": ["api", "logs"],
+          "query": [
+            {
+              "key": "hostname",
+              "value": "",
+              "description": "Filter by hostname (case-insensitive partial match)"
+            },
+            {
+              "key": "event_type",
+              "value": "",
+              "description": "Filter by event type (Boot, Shutdown, Restart, Crash, Wake, Sleep)"
+            },
+            {
+              "key": "limit",
+              "value": "100",
+              "description": "Max results (default 100)"
+            },
+            {
+              "key": "offset",
+              "value": "0",
+              "description": "Pagination offset (default 0)"
+            }
+          ]
+        },
+        "description": "List event logs with optional filtering. All query params are optional.",
+        "event": [
+          {
+            "listen": "test",
+            "script": {
+              "type": "text/javascript",
+              "exec": [
+                "pm.test('Status is 200', function () { pm.response.to.have.status(200); });",
+                "pm.test('Response is an array', function () { var json = pm.response.json(); pm.expect(json.data).to.be.an('array'); });"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "Computer Status",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/status",
+          "host": ["{{base_url}}"],
+          "path": ["api", "status"]
+        },
+        "description": "Return the latest event for each unique hostname.",
+        "event": [
+          {
+            "listen": "test",
+            "script": {
+              "type": "text/javascript",
+              "exec": [
+                "pm.test('Status is 200', function () { pm.response.to.have.status(200); });",
+                "pm.test('Response is an array', function () { var json = pm.response.json(); pm.expect(json.data).to.be.an('array'); });"
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ]
+}
