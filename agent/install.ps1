@@ -26,61 +26,94 @@ foreach ($file in $filesToCopy) {
     }
 }
 
-$bootAction = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -ExecutionPolicy Bypass -File \"$installDir\agent.ps1\" -EventType Boot"
+$agentPath = Join-Path $installDir 'agent.ps1'
+$shutdownWrapperPath = Join-Path $installDir 'PCLogger-Shutdown.cmd'
+$restartWrapperPath = Join-Path $installDir 'PCLogger-Restart.cmd'
+
+$bootArguments = '-NoProfile -ExecutionPolicy Bypass -File "{0}" -EventType Boot' -f $agentPath
+
+$bootAction = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $bootArguments
+
 $bootTrigger = New-ScheduledTaskTrigger -AtStartup
-$bootPrincipal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -RunLevel Highest
+
+$bootPrincipal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
+
 $bootSettings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
-Register-ScheduledTask -TaskName 'LabAgent-Boot' -Action $bootAction -Trigger $bootTrigger -Principal $bootPrincipal -Settings $bootSettings -Force | Out-Null
 
-$restartTaskXml = @"
-<?xml version="1.0" encoding="UTF-16"?>
-<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
-  <RegistrationInfo>
-    <Author>LabAgent</Author>
-    <Description>Detects restart events and forwards them to the backend.</Description>
-  </RegistrationInfo>
-  <Triggers>
-    <EventTrigger>
-      <Enabled>true</Enabled>
-      <Subscription>&lt;QueryList&gt;&lt;Query Id="0" Path="System"&gt;&lt;Select Path="System"&gt;*[System[(Provider[@Name='User32'] and EventID=1074)]]&lt;/Select&gt;&lt;/Query&gt;&lt;/QueryList&gt;</Subscription>
-    </EventTrigger>
-  </Triggers>
-  <Principals>
-    <Principal id="Author">
-      <UserId>S-1-5-18</UserId>
-      <RunLevel>HighestAvailable</RunLevel>
-      <LogonType>InteractiveToken</LogonType>
-    </Principal>
-  </Principals>
-  <Settings>
-    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
-    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
-    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
-    <AllowHardTerminate>true</AllowHardTerminate>
-    <StartWhenAvailable>false</StartWhenAvailable>
-    <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>
-  </Settings>
-  <Actions Context="Author">
-    <Exec>
-      <Command>powershell.exe</Command>
-      <Arguments>-NoProfile -ExecutionPolicy Bypass -File "$installDir\agent.ps1" -EventType Restart</Arguments>
-    </Exec>
-  </Actions>
-</Task>
-"@
+Register-ScheduledTask -TaskName 'PCLoggerAgent-Boot' -Action $bootAction -Trigger $bootTrigger -Principal $bootPrincipal -Settings $bootSettings -Force | Out-Null
 
-Register-ScheduledTask -TaskName 'LabAgent-Restart' -Xml $restartTaskXml -Force | Out-Null
+$restartArguments = '-NoProfile -ExecutionPolicy Bypass -File "{0}" -EventType Restart' -f $agentPath
+
+$restartAction = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $restartArguments
+
+$eventTriggerClass = Get-CimClass -ClassName MSFT_TaskEventTrigger -Namespace Root/Microsoft/Windows/TaskScheduler
+$restartTrigger = New-CimInstance -CimClass $eventTriggerClass -ClientOnly
+$restartTrigger.Subscription = '<QueryList><Query Id="0" Path="System"><Select Path="System">*[System[(Provider[@Name=''User32''] and EventID=1074)]]</Select></Query></QueryList>'
+$restartTrigger.Enabled = $true
+
+$restartPrincipal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
+
+$restartSettings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -MultipleInstances IgnoreNew
+
+Register-ScheduledTask -TaskName 'PCLoggerAgent-Restart' -Action $restartAction -Trigger $restartTrigger -Principal $restartPrincipal -Settings $restartSettings -Description 'Detects restart events and forwards them to the backend.' -Force | Out-Null
 
 $shutdownDir = Join-Path $env:WINDIR 'System32\GroupPolicy\Machine\Scripts\Shutdown'
 New-Item -ItemType Directory -Path $shutdownDir -Force | Out-Null
 $shutdownScriptPath = Join-Path $shutdownDir 'lab-agent-shutdown.cmd'
 $shutdownScriptContent = @"
 @echo off
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$installDir\agent.ps1" -EventType Shutdown
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$agentPath" -EventType Shutdown
 "@
 Set-Content -Path $shutdownScriptPath -Value $shutdownScriptContent -Encoding ASCII
+
+$shutdownWrapperContent = @"
+@echo off
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$agentPath" -EventType Shutdown
+timeout /t 5 /nobreak >nul
+shutdown -s -f -t 0
+"@
+Set-Content -Path $shutdownWrapperPath -Value $shutdownWrapperContent -Encoding ASCII
+
+$restartWrapperContent = @"
+@echo off
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$agentPath" -EventType Restart
+timeout /t 5 /nobreak >nul
+shutdown -r -f -t 0
+"@
+Set-Content -Path $restartWrapperPath -Value $restartWrapperContent -Encoding ASCII
+
+function Test-AgentConfig {
+    $configPath = Join-Path $installDir 'config.json'
+    if (-not (Test-Path $configPath)) {
+        throw "Config file not found: $configPath"
+    }
+    try {
+        $cfg = Get-Content -Path $configPath -Raw | ConvertFrom-Json
+    } catch {
+        throw "Config file is not valid JSON: $configPath"
+    }
+    if ([string]::IsNullOrWhiteSpace($cfg.api_url)) {
+        throw 'config.json must define api_url'
+    }
+    if ($cfg.timeout -and [int]$cfg.timeout -le 0) {
+        throw 'config.json timeout must be a positive integer'
+    }
+    if ($cfg.retry -and [int]$cfg.retry -le 0) {
+        throw 'config.json retry must be a positive integer'
+    }
+    Write-Host "Config OK: api_url=$($cfg.api_url) timeout=$($cfg.timeout) retry=$($cfg.retry)"
+}
+
+try {
+    Test-AgentConfig
+} catch {
+    Write-Error "Configuration validation failed: $($_.Exception.Message)"
+    exit 1
+}
 
 Write-Host 'Installation completed successfully.'
 Write-Host "Agent installed to $installDir"
 Write-Host 'Boot and restart tasks were registered.'
 Write-Host "Shutdown wrapper created at $shutdownScriptPath"
+Write-Host "Manual shutdown wrapper created at $shutdownWrapperPath"
+Write-Host "Manual restart wrapper created at $restartWrapperPath"

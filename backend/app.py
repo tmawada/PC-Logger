@@ -15,6 +15,14 @@ def create_app():
     def dashboard():
         return render_template("index.html")
 
+    @app.route("/logs")
+    def logs_page():
+        return render_template("logs.html")
+
+    @app.route("/event-log")
+    def event_log_page():
+        return render_template("event_log.html")
+
     return app
 
 
