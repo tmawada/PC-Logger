@@ -60,27 +60,6 @@ def create_log():
             400,
         )
 
-    # --- Crash Detection ---
-    # If the incoming event is Boot, check whether the last event for
-    # this hostname was also a Boot (i.e. no Shutdown in between).
-    if event_type == "Boot":
-        last_log = (
-            PcLog.query.filter_by(hostname=hostname)
-            .order_by(PcLog.created_at.desc())
-            .first()
-        )
-
-        if last_log and last_log.event_type in ("Boot", "Restart"):
-            # Previous session ended without a Shutdown → Crash
-            crash_log = PcLog(
-                hostname=hostname,
-                event_type="Crash",
-                message="Unexpected Shutdown",
-                created_at=last_log.created_at,
-                received_at=datetime.now(timezone.utc),
-            )
-            db.session.add(crash_log)
-
     # --- Persist ---
     log = PcLog(
         hostname=hostname,
