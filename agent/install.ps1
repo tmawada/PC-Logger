@@ -4,7 +4,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $sourceDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$installDir = 'C:\ProgramData\LabAgent'
+$installDir = 'C:\ProgramData\PCLoggerAgent'
 $logsDir = Join-Path $installDir 'logs'
 $cacheDir = Join-Path $installDir 'cache'
 
@@ -69,7 +69,7 @@ Set-Content -Path $shutdownScriptPath -Value $shutdownScriptContent -Encoding AS
 $shutdownWrapperContent = @"
 @echo off
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$agentPath" -EventType Shutdown
-timeout /t 5 /nobreak >nul
+timeout /t 15 /nobreak >nul
 shutdown -s -f -t 0
 "@
 Set-Content -Path $shutdownWrapperPath -Value $shutdownWrapperContent -Encoding ASCII
@@ -77,39 +77,10 @@ Set-Content -Path $shutdownWrapperPath -Value $shutdownWrapperContent -Encoding 
 $restartWrapperContent = @"
 @echo off
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$agentPath" -EventType Restart
-timeout /t 5 /nobreak >nul
+timeout /t 15 /nobreak >nul
 shutdown -r -f -t 0
 "@
 Set-Content -Path $restartWrapperPath -Value $restartWrapperContent -Encoding ASCII
-
-function Test-AgentConfig {
-    $configPath = Join-Path $installDir 'config.json'
-    if (-not (Test-Path $configPath)) {
-        throw "Config file not found: $configPath"
-    }
-    try {
-        $cfg = Get-Content -Path $configPath -Raw | ConvertFrom-Json
-    } catch {
-        throw "Config file is not valid JSON: $configPath"
-    }
-    if ([string]::IsNullOrWhiteSpace($cfg.api_url)) {
-        throw 'config.json must define api_url'
-    }
-    if ($cfg.timeout -and [int]$cfg.timeout -le 0) {
-        throw 'config.json timeout must be a positive integer'
-    }
-    if ($cfg.retry -and [int]$cfg.retry -le 0) {
-        throw 'config.json retry must be a positive integer'
-    }
-    Write-Host "Config OK: api_url=$($cfg.api_url) timeout=$($cfg.timeout) retry=$($cfg.retry)"
-}
-
-try {
-    Test-AgentConfig
-} catch {
-    Write-Error "Configuration validation failed: $($_.Exception.Message)"
-    exit 1
-}
 
 Write-Host 'Installation completed successfully.'
 Write-Host "Agent installed to $installDir"

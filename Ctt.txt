@@ -1,0 +1,68 @@
+
+UWF Enable -> bisa catat log" event hidup, mati, crash
+
+Ketika wakeup ambil event viewer sebelumnya
+
+
+Logs shutdown wake pake event viewer
+
+Kondisi crash:
+- lan kecabut
+- freeze
+- 
+
+
+Anomaly Detection -> Cek ada PC yang nyala lebih dari yang seharusnya
+
+
+
+Command:
+Get-WinEvent -FilterHashtable @{
+    LogName='System'
+    ID=6005,6006,1074,41,6008,12,42
+    StartTime = Get-Date "2026-08-07 00:00:00"
+    EndTime   = Get-Date "2026-08-07 23:59:59"
+} |
+Select-Object TimeCreated, Id, ProviderName, Message |
+Sort-Object TimeCreated -Descending
+
+
+
+Get all latest logs:
+- Wake up
+- Shutdown
+- Crash
+- Restart
+
+
+Schema:
+hostname, VARCHAR
+type, VARCHAR
+message, VARCHAR
+timecreated, timestamp
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

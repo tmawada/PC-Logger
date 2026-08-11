@@ -15,3 +15,9 @@ class Config:
         f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
     )
     SQLALCHEMY_TRACK_MODIFICATIONS = False
+    SQLALCHEMY_ENGINE_OPTIONS = {
+        "pool_size": 8,
+        "max_overflow": 12,
+        "pool_pre_ping": True,
+        "pool_recycle": 300,
+    }

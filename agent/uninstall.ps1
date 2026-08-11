@@ -3,7 +3,7 @@ param()
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$installDir = 'C:\ProgramData\LabAgent'
+$installDir = 'C:\ProgramData\PCLoggerAgent'
 $shutdownDir = Join-Path $env:WINDIR 'System32\GroupPolicy\Machine\Scripts\Shutdown'
 $shutdownScriptPath = Join-Path $shutdownDir 'lab-agent-shutdown.cmd'
 $shutdownWrapperPath = Join-Path $installDir 'PCLogger-Shutdown.cmd'
