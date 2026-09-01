@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="All PC event logs">
+    <title>Lab PC Monitor — All Logs</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="app">
+        <!-- ============================================================
+             HEADER
+             ============================================================ -->
+        <header class="header" id="header">
+            <div class="header-left">
+                <div class="logo">PC</div>
+                <h1>Lab PC Monitor</h1>
+            </div>
+            <div class="header-right">
+                <a class="btn" href="/">📊 Dashboard</a>
+                <a class="btn" href="/event-log">📋 Event Log</a>
+                <a class="btn btn-active" href="/logs">📄 All Logs</a>
+                <div class="pulse-dot" id="live-indicator"></div>
+                <span style="font-size:12px; color:var(--text-muted)" id="last-refresh">—</span>
+                <button class="btn" id="btn-refresh" onclick="refreshAll()">
+                    ↻ Refresh
+                </button>
+                <button class="btn" id="btn-export" onclick="exportCSV()">
+                    ↓ Export CSV
+                </button>
+            </div>
+        </header>
+
+        <!-- ============================================================
+             FILTERS
+             ============================================================ -->
+        <div class="section-title">
+            <span>📄</span> All Logs
+        </div>
+        <div class="filters" id="filters-bar">
+            <div class="search-wrapper">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                </svg>
+                <input class="search-input" type="text" id="search-hostname"
+                       placeholder="Search hostname..." oninput="onFilterChange()">
+            </div>
+            <select class="filter-select" id="filter-room" onchange="onFilterChange()">
+                <option value="">All Rooms</option>
+            </select>
+            <select class="filter-select" id="filter-event" onchange="onFilterChange()">
+                <option value="">All Events</option>
+                <option value="Boot">Boot</option>
+                <option value="Shutdown">Shutdown</option>
+                <option value="Restart">Restart</option>
+                <option value="Crash">Crash</option>
+            </select>
+            <label class="latest-toggle" title="Show only the latest log of each category (Boot, Shutdown, Restart, Crash) per computer. Untick to show all logs, newest first.">
+                <input type="checkbox" id="filter-distinct" checked onchange="onFilterChange()">
+                Distinct (last event per category)
+            </label>
+        </div>
+
+        <!-- ============================================================
+             TABLE
+             ============================================================ -->
+        <div class="table-wrapper" id="table-wrapper">
+            <div class="table-scroll">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Hostname</th>
+                            <th>Event</th>
+                            <th>Message</th>
+                            <th>Event Time</th>
+                            <th>Received</th>
+                        </tr>
+                    </thead>
+                    <tbody id="log-tbody">
+                        <!-- Populated by JS -->
+                    </tbody>
+                </table>
+            </div>
+            <div class="pagination-bar">
+                <span id="pagination-info">—</span>
+                <div class="pagination-buttons" id="pagination-buttons">
+                    <!-- Populated by JS -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast container -->
+    <div class="toast-container" id="toast-container"></div>
+
+    <script>
+        /* ==============================================================
+           STATE
+           ============================================================== */
+        const API_BASE = window.location.origin + '/api';
+        const PAGE_SIZE = 20;
+        const ROOMS = ['601','602','603','604','605','606','608','610','611',
+                       '621','622','623','624','625','626','627','628','629','630'];
+
+        let allLogs = [];
+        let filteredLogs = [];
+        let currentPage = 1;
+        let autoRefreshInterval = null;
+
+        /* ==============================================================
+           API CALLS
+           ============================================================== */
+        async function fetchJSON(url) {
+            const res = await fetch(url);
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            return res.json();
+        }
+
+        async function fetchLogs() {
+            const data = await fetchJSON(`${API_BASE}/logs?limit=5000`);
+            allLogs = data.data || [];
+            applyFilters();
+        }
+
+        async function refreshAll() {
+            try {
+                await fetchLogs();
+                document.getElementById('last-refresh').textContent =
+                    'Updated ' + new Date().toLocaleTimeString();
+            } catch (e) {
+                showToast('Failed to fetch data: ' + e.message, 'error');
+            }
+        }
+
+        /* ==============================================================
+           FILTERS
+           ============================================================== */
+        function onFilterChange() {
+            currentPage = 1;
+            applyFilters();
+        }
+
+        function applyFilters() {
+            const hostname = document.getElementById('search-hostname').value.toLowerCase();
+            const eventType = document.getElementById('filter-event').value;
+            const room = document.getElementById('filter-room').value;
+
+            let logs = allLogs.filter(l => {
+                const h = l.hostname.toLowerCase();
+                if (hostname && !h.includes(hostname)) return false;
+                if (eventType && l.event_type !== eventType) return false;
+                if (room && !h.includes(room)) return false;
+                return true;
+            });
+
+            logs.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
+
+            if (document.getElementById('filter-distinct').checked) {
+                const categories = ['Boot', 'Shutdown', 'Restart', 'Crash'];
+                const seen = new Set();
+                const distinct = [];
+                logs.forEach(l => {
+                    if (!categories.includes(l.event_type)) return;
+                    const key = l.hostname + '|' + l.event_type;
+                    if (!seen.has(key)) {
+                        seen.add(key);
+                        distinct.push(l);
+                    }
+                });
+                distinct.sort((a, b) =>
+                    a.hostname.localeCompare(b.hostname) ||
+                    (b.created_at || '').localeCompare(a.created_at || '')
+                );
+                logs = distinct;
+            }
+
+            filteredLogs = logs;
+            renderTable();
+            renderPagination();
+        }
+
+        /* ==============================================================
+           TABLE RENDERING
+           ============================================================== */
+        function renderTable() {
+            const tbody = document.getElementById('log-tbody');
+            const start = (currentPage - 1) * PAGE_SIZE;
+            const page = filteredLogs.slice(start, start + PAGE_SIZE);
+
+            if (!page.length) {
+                tbody.innerHTML = `
+                    <tr><td colspan="5">
+                        <div class="empty-state">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
+                                 stroke="currentColor" stroke-width="1.5">
+                                <path stroke-linecap="round" stroke-linejoin="round"
+                                      d="M9 12h6m-3-3v6m-7.5 3h15a2.25 2.25 0 002.25-2.25V6.75A2.25 2.25 0 0019.5 4.5h-15A2.25 2.25 0 002.25 6.75v10.5A2.25 2.25 0 004.5 19.5z"/>
+                            </svg>
+                            <p>No events found</p>
+                        </div>
+                    </td></tr>
+                `;
+                return;
+            }
+
+            tbody.innerHTML = page.map((log, i) => `
+                <tr style="animation: fadeInUp ${0.05 * i}s ease-out both">
+                    <td class="hostname-cell">${esc(log.hostname)}</td>
+                    <td>
+                        <span class="badge badge-${log.event_type}">
+                            <span class="badge-dot"></span>
+                            ${esc(log.event_type)}
+                        </span>
+                    </td>
+                    <td class="message-cell" title="${esc(log.message || '')}">${esc(log.message || '—')}</td>
+                    <td class="time-cell">${formatTime(log.created_at)}</td>
+                    <td class="time-cell">${formatTime(log.received_at)}</td>
+                </tr>
+            `).join('');
+        }
+
+        /* ==============================================================
+           PAGINATION
+           ============================================================== */
+        function renderPagination() {
+            const total = filteredLogs.length;
+            const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+            const start = (currentPage - 1) * PAGE_SIZE + 1;
+            const end = Math.min(currentPage * PAGE_SIZE, total);
+
+            document.getElementById('pagination-info').textContent =
+                total ? `${start}–${end} of ${total}` : '0 events';
+
+            const container = document.getElementById('pagination-buttons');
+            let html = '';
+
+            html += `<button class="page-btn" onclick="goPage(${currentPage - 1})"
+                             ${currentPage <= 1 ? 'disabled' : ''}>‹</button>`;
+
+            const maxVisible = 5;
+            let startPage = Math.max(1, currentPage - Math.floor(maxVisible / 2));
+            let endPage = Math.min(totalPages, startPage + maxVisible - 1);
+            startPage = Math.max(1, endPage - maxVisible + 1);
+
+            for (let p = startPage; p <= endPage; p++) {
+                html += `<button class="page-btn ${p === currentPage ? 'active' : ''}"
+                                 onclick="goPage(${p})">${p}</button>`;
+            }
+
+            html += `<button class="page-btn" onclick="goPage(${currentPage + 1})"
+                             ${currentPage >= totalPages ? 'disabled' : ''}>›</button>`;
+
+            container.innerHTML = html;
+        }
+
+        function goPage(page) {
+            const totalPages = Math.max(1, Math.ceil(filteredLogs.length / PAGE_SIZE));
+            if (page < 1 || page > totalPages) return;
+            currentPage = page;
+            renderTable();
+            renderPagination();
+        }
+
+        /* ==============================================================
+           EXPORT CSV
+           ============================================================== */
+        function exportCSV() {
+            if (!filteredLogs.length) {
+                showToast('No data to export', 'error');
+                return;
+            }
+
+            const headers = ['Hostname', 'Event Type', 'Message', 'Event Time', 'Received At'];
+            const rows = filteredLogs.map(l => [
+                l.hostname,
+                l.event_type,
+                `"${(l.message || '').replace(/"/g, '""')}"`,
+                l.created_at || '',
+                l.received_at || '',
+            ]);
+
+            const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `pc_logs_${new Date().toISOString().slice(0,10)}.csv`;
+            a.click();
+            URL.revokeObjectURL(url);
+
+            showToast(`Exported ${filteredLogs.length} records`, 'success');
+        }
+
+        /* ==============================================================
+           TOAST NOTIFICATIONS
+           ============================================================== */
+        function showToast(message, type = 'success') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.textContent = message;
+            container.appendChild(toast);
+
+            setTimeout(() => {
+                toast.style.animation = `fadeOut 300ms ease-in forwards`;
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+
+        /* ==============================================================
+           UTILITIES
+           ============================================================== */
+        function esc(str) {
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+
+        function formatTime(iso) {
+            if (!iso) return '—';
+            const d = new Date(iso);
+            return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) +
+                   ' ' + d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        }
+
+        function populateRooms() {
+            const select = document.getElementById('filter-room');
+            ROOMS.forEach(r => {
+                const opt = document.createElement('option');
+                opt.value = r;
+                opt.textContent = 'Room ' + r;
+                select.appendChild(opt);
+            });
+        }
+
+        /* ==============================================================
+           INIT
+           ============================================================== */
+        document.addEventListener('DOMContentLoaded', () => {
+            populateRooms();
+            refreshAll();
+            // Auto-refresh every 30 seconds
+            autoRefreshInterval = setInterval(refreshAll, 30000);
+        });
+    </script>
+</body>
+</html>
