@@ -1,5 +1,5 @@
 {
-  "api_url": "http://10.22.65.146:5000/api/log",
+  "api_url": "http://10.22.65.146:80/api/log",
   "timeout": 5,
   "retry": 2
 }
