@@ -1,3 +1,4 @@
+import socket
 from datetime import datetime, timezone
 from flask import Blueprint, request, jsonify
 from database import db
@@ -21,6 +22,7 @@ def create_log():
         "created_at": "2026-08-06T08:00:00"
     }
     """
+    socket.setdefaulttimeout(10)
     data = request.get_json(silent=True)
 
     if not data:

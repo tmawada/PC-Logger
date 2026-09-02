@@ -39,10 +39,7 @@ $bootTrigger = New-ScheduledTaskTrigger -AtStartup
 $bootPrincipal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
 
 $bootSettings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
-<<<<<<< HEAD
 $bootSettings.NetworkSettings = New-ScheduledTaskNetworkSettings -RunOnlyIfNetworkAvailable
-=======
->>>>>>> 9742b7cce034720922b6e065cd83f4f6e05d17e2
 
 Register-ScheduledTask -TaskName 'PCLoggerAgent-Boot' -Action $bootAction -Trigger $bootTrigger -Principal $bootPrincipal -Settings $bootSettings -Force | Out-Null
 
@@ -58,10 +55,7 @@ $restartTrigger.Enabled = $true
 $restartPrincipal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
 
 $restartSettings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -MultipleInstances IgnoreNew
-<<<<<<< HEAD
 $restartSettings.NetworkSettings = New-ScheduledTaskNetworkSettings -RunOnlyIfNetworkAvailable
-=======
->>>>>>> 9742b7cce034720922b6e065cd83f4f6e05d17e2
 
 Register-ScheduledTask -TaskName 'PCLoggerAgent-Restart' -Action $restartAction -Trigger $restartTrigger -Principal $restartPrincipal -Settings $restartSettings -Description 'Detects restart events and forwards them to the backend.' -Force | Out-Null
 
@@ -76,29 +70,24 @@ Set-Content -Path $shutdownScriptPath -Value $shutdownScriptContent -Encoding AS
 
 $shutdownWrapperContent = @"
 @echo off
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$agentPath" -EventType Shutdown
-<<<<<<< HEAD
-timeout /t 5 /nobreak >nul
-=======
-timeout /t 15 /nobreak >nul
->>>>>>> 9742b7cce034720922b6e065cd83f4f6e05d17e2
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$agentPath" -EventType Shutdown -Wait
+if %errorlevel% neq 0 (
+    echo Agent failed to send log, but continuing with shutdown...
+)
 shutdown -s -f -t 0
 "@
 Set-Content -Path $shutdownWrapperPath -Value $shutdownWrapperContent -Encoding ASCII
 
 $restartWrapperContent = @"
 @echo off
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$agentPath" -EventType Restart
-<<<<<<< HEAD
-timeout /t 5 /nobreak >nul
-=======
-timeout /t 15 /nobreak >nul
->>>>>>> 9742b7cce034720922b6e065cd83f4f6e05d17e2
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$agentPath" -EventType Restart -Wait
+if %errorlevel% neq 0 (
+    echo Agent failed to send log, but continuing with restart...
+)
 shutdown -r -f -t 0
 "@
 Set-Content -Path $restartWrapperPath -Value $restartWrapperContent -Encoding ASCII
 
-<<<<<<< HEAD
 function Test-AgentConfig {
     $configPath = Join-Path $installDir 'config.json'
     if (-not (Test-Path $configPath)) {
@@ -128,8 +117,6 @@ try {
     exit 1
 }
 
-=======
->>>>>>> 9742b7cce034720922b6e065cd83f4f6e05d17e2
 Write-Host 'Installation completed successfully.'
 Write-Host "Agent installed to $installDir"
 Write-Host 'Boot and restart tasks were registered.'

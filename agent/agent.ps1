@@ -1,7 +1,9 @@
 param(
     [Parameter(Mandatory = $true)]
     [ValidateSet("Boot", "Shutdown", "Restart")]
-    [string]$EventType
+    [string]$EventType,
+
+    [switch]$Wait
 )
 
 Set-StrictMode -Version Latest
@@ -29,22 +31,6 @@ $retryCount = if ($config.retry) { [int]$config.retry } else { 2 }
 $hostname = $env:COMPUTERNAME
 if (-not $hostname) {
     $hostname = [System.Net.Dns]::GetHostName()
-}
-
-function Wait-NetworkReady {
-    param(
-        [string]$BaseUrl,
-        [int]$MaxWaitSeconds = 30
-    )
-    $healthUrl = $BaseUrl.Replace('/api/log', '/api/status')
-    for ($i = 1; $i -le $MaxWaitSeconds; $i++) {
-        try {
-            $resp = Invoke-RestMethod -Uri $healthUrl -Method Get -TimeoutSec 2 -ErrorAction Stop
-            if ($resp.success) { return $true }
-        } catch { }
-        Start-Sleep -Seconds 1
-    }
-    return $false
 }
 
 function Get-EventMessage {
@@ -123,44 +109,95 @@ $payload = @{
 
 $jsonPayload = $payload | ConvertTo-Json -Compress
 
-if (-not (Wait-NetworkReady -BaseUrl $apiUrl -MaxWaitSeconds 30)) {
-    Write-Error "Network not ready after 30 seconds"
-    exit 1
+Write-Host "Sending $EventType event for $hostname to $apiUrl"
+
+# Only apply jitter for scheduled tasks (not -Wait), to spread 41 PCs
+if (-not $Wait) {
+    $jitter = Get-Random -Minimum 0 -Maximum 30000
+    Write-Host "Jitter: $jitter ms"
+    Start-Sleep -Milliseconds $jitter
 }
 
-$jitter = Get-Random -Minimum 0 -Maximum 5000
-Start-Sleep -Milliseconds $jitter
+# Synchronous send with full retry (used for Boot only)
+function Send-Synchronous {
+    for ($attempt = 1; $attempt -le $retryCount; $attempt++) {
+        try {
+            Invoke-RestMethod -Uri $apiUrl -Method Post -ContentType 'application/json' -Body $jsonPayload -TimeoutSec $timeoutSeconds | Out-Null
+            Write-Host "Event sent successfully: $($eventData.Type)"
+            return $true
+        } catch {
+            $errorMessage = $_.Exception.Message
+            Write-Warning "Attempt $attempt/$retryCount failed: $errorMessage"
+            if ($attempt -lt $retryCount) { Start-Sleep -Seconds 2 }
+        }
+    }
+    return $false
+}
 
-if ($EventType -eq 'Shutdown' -or $EventType -eq 'Restart') {
-    $job = Start-Job -ScriptBlock {
-        param($url, $payload, $timeout, $retry)
-        for ($a = 1; $a -le $retry; $a++) {
+# Fire-and-forget async (used for Shutdown/Restart from scheduled tasks)
+function Send-Async {
+    Start-Job -ScriptBlock {
+        param($url, $payload, $timeout)
+        try {
+            Invoke-RestMethod -Uri $url -Method Post -ContentType 'application/json' -Body $payload -TimeoutSec $timeout -ErrorAction SilentlyContinue
+        } catch { }
+    } -ArgumentList $apiUrl, $jsonPayload, $timeoutSeconds | Out-Null
+    Write-Host "$EventType event dispatched (async)"
+    Start-Sleep -Milliseconds 500
+}
+
+if ($EventType -eq 'Boot') {
+    # Boot: always synchronous with full retry
+    $success = Send-Synchronous
+    exit (if ($success) { 0 } else { 1 })
+}
+elseif ($EventType -eq 'Shutdown') {
+    if ($Wait) {
+        # Manual wrapper: synchronous with SHORT timeout (admin waiting), 1 retry max
+        for ($attempt = 1; $attempt -le 1; $attempt++) {
             try {
-                Invoke-RestMethod -Uri $url -Method Post -ContentType 'application/json' -Body $payload -TimeoutSec $timeout | Out-Null
-                break
+                Invoke-RestMethod -Uri $apiUrl -Method Post -ContentType 'application/json' -Body $jsonPayload -TimeoutSec 3 | Out-Null
+                Write-Host "Shutdown event sent successfully"
+                exit 0
             } catch {
-                if ($a -lt $retry) { Start-Sleep -Seconds 1 }
+                Write-Warning "Shutdown log failed: $($_.Exception.Message)"
             }
         }
-    } -ArgumentList $apiUrl, $jsonPayload, $timeoutSeconds, $retryCount
-    Write-Host "$EventType event queued for async delivery"
-    exit 0
-}
-
-for ($attempt = 1; $attempt -le $retryCount; $attempt++) {
-    try {
-        Invoke-RestMethod -Uri $apiUrl -Method Post -ContentType 'application/json' -Body $jsonPayload -TimeoutSec $timeoutSeconds | Out-Null
-        Write-Host "Event sent successfully: $($eventData.Type)"
+        exit 0  # Continue shutdown even if log fails
+    } else {
+        # Group Policy / scheduled: async fire-and-forget
+        Send-Async
         exit 0
-    } catch {
-        $errorMessage = $_.Exception.Message
-        Write-Warning "Attempt $attempt/$retryCount failed: $errorMessage"
-
-        if ($attempt -lt $retryCount) {
-            Start-Sleep -Seconds 2
+    }
+}
+elseif ($EventType -eq 'Restart') {
+    if ($Wait) {
+        # Manual wrapper: synchronous with SHORT timeout (admin waiting), 1 retry max
+        for ($attempt = 1; $attempt -le 1; $attempt++) {
+            try {
+                Invoke-RestMethod -Uri $apiUrl -Method Post -ContentType 'application/json' -Body $jsonPayload -TimeoutSec 3 | Out-Null
+                Write-Host "Restart event sent successfully"
+                exit 0
+            } catch {
+                Write-Warning "Restart log failed: $($_.Exception.Message)"
+            }
         }
+        exit 0  # Continue restart even if log fails
+    } else {
+        # Event 1074 trigger: synchronous with short timeout (fires at initiation)
+        for ($attempt = 1; $attempt -le $retryCount; $attempt++) {
+            try {
+                Invoke-RestMethod -Uri $apiUrl -Method Post -ContentType 'application/json' -Body $jsonPayload -TimeoutSec 3 | Out-Null
+                Write-Host "Restart event sent successfully"
+                exit 0
+            } catch {
+                if ($attempt -lt $retryCount) { Start-Sleep -Milliseconds 500 }
+            }
+        }
+        Write-Warning "Restart event failed after $retryCount attempts"
+        exit 0
     }
 }
 
-Write-Error "Failed to send event after $retryCount attempts."
+Write-Error "Unknown event type"
 exit 1

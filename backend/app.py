@@ -1,8 +1,12 @@
+from gevent import monkey
+monkey.patch_all()
+
 from flask import Flask, render_template
 from config import Config
 from database import init_db, db
 from routes import api
 
+from gevent.pywsgi import WSGIServer
 
 def create_app():
     app = Flask(__name__)
@@ -34,4 +38,8 @@ with app.app_context():
     db.create_all()
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True, threaded=True)
+
+    http_server = WSGIServer(('0.0.0.0', 5000), app)
+    http_server.serve_forever()
+
+    # app.run(host="0.0.0.0", port=5000, debug=True, threaded=True)
