@@ -32,6 +32,13 @@ def create_app():
         pcs = [p.to_dict() for p in pcs]
         return render_template("mainmenu.html", rooms = rooms, pcs = pcs )
 
+    @app.route("/main/room/<room_id>")
+    def get_room_details(room_id):
+        room_prefix = f"BN{room_id}%"
+        room_id_data = PcLog.query.filter(PcLog.hostname.like(room_prefix)).all()
+        room_id_data = [d.to_dict() for d in room_id_data]
+        return render_template("room_details.html", room_datas = room_id_data)
+
     @app.route("/logs")
     def logs_page():
         return render_template("logs.html")
