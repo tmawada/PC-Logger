@@ -1,18 +1,100 @@
 <!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Testt</title>
+  <html lang="en">
+  <head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PC Loggig</title>
+  <link rel="stylesheet" href="/static/mainmenu.css">
 </head>
 <body>
+  <div class="dashboard">
+
+    <div class="topbar">
+      <div class="title-block">
+        <h1>PC Logging</h1>
+        <p>{{ rooms|length }} rooms · {{ pcs_per_room }} PCs each</p>
+      </div>
+      {% include "refresh_button.html" %}
+      <form class="search-form" id="searchForm">
+        <input type="text" id="roomSearch" placeholder="Room number" autocomplete="off">
+        <button type="submit">Search</button>
+      </form>
+    </div>
+
+    <div class="">
+      Total PCS Turned On
+    </div>
+
+    <div class="room-grid" id="roomGrid"></div>
+
+  </div>
 
 
+  <script>
+
+
+    const ROOM_ORDER = {{ rooms|tojson }};
+    const ROOMS_DATA = {{ rooms_data|tojson }};
+    const PCS_PER_ROOM = {{ pcs_per_room }};
+
+    const roomGrid = document.getElementById('roomGrid');
+    const searchInput = document.getElementById('roomSearch');
+    const searchForm = document.getElementById('searchForm');
+
+    function renderGrid(filterText) {
+      const filtered = ROOM_ORDER.filter(r => r.includes(filterText.trim()));
+      roomGrid.innerHTML = '';
+
+      if (filtered.length === 0) {
+        roomGrid.innerHTML = '<div class="empty-state">No room matches "' + filterText + '".</div>';
+        return;
+      }
+
+      filtered.forEach(room => {
+        const stats = ROOMS_DATA[room] || { on: 0, off: 0, unknown: PCS_PER_ROOM };
+        const onPct = (stats.on / PCS_PER_ROOM) * 100;
+        const offPct = (stats.off / PCS_PER_ROOM) * 100;
+
+        const tile = document.createElement('a');
+        tile.className = 'room-tile';
+        tile.href = `/main/room/${room}`;
+        tile.innerHTML = `
+          <div class="room-number">${room}</div>
+          <div class="room-counts">
+            <span class="on-count">${stats.on} on</span>
+            <span class="off-count">${stats.off} off</span>
+          </div>
+          <div class="proportion-bar">
+            <div class="seg-on" style="width:${onPct}%"></div>
+          </div>
+        `;
+        roomGrid.appendChild(tile);
+      });
+    }
+
+    function updateUrl(value) {
+      const url = new URL(window.location);
+      if (value) {
+        url.searchParams.set('room', value);
+      } else {
+        url.searchParams.delete('room');
+      }
+      window.history.replaceState({}, '', url);
+    }
+
+    searchInput.addEventListener('input', () => {
+      renderGrid(searchInput.value);
+      updateUrl(searchInput.value);
+    });
+    searchForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      renderGrid(searchInput.value);
+      updateUrl(searchInput.value);
+    });
+
+    const initialQuery = new URLSearchParams(window.location.search).get('room') || '';
+    searchInput.value = initialQuery;
+    renderGrid(initialQuery);
+  </script>
 </body>
-<script>
-
-    const pcs = {{ pcs | tojson }};
-
-    console.log("YES" , pcs)
-</script>
 </html>

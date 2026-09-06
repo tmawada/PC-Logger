@@ -1,20 +1,122 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en">  
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Document</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Room {{ room_id }}</title>
+  <link rel="stylesheet" href="/static/room_details.css">
 </head>
 <body>
-    
-</body>
+  <div class="page">
+
+    <div class="topbar">
+      <div>
+        <a class="back-link" href="/main">Back to all rooms</a>
+        <div class="title-block">
+          <h1>Room {{ room_id }}</h1>
+          <div class="summary">
+            <span class="on-count">{{ on_count }} on</span> · <span class="off-count">{{ off_count }} off</span> · {{ unknown_count }} unknown
+          </div>
+        </div>
+      </div>
+      <div class="legend">
+        <span><span class="dot on"></span>On</span>
+        <span><span class="dot off"></span>Off</span>
+        <span><span class="dot unknown"></span>No recent log</span>
+      </div>
+    </div>
+
+    {% include "refresh_button.html" %}
+    <div style="margin-bottom: 24px;"></div>
+
+    <div class="pc-grid">
+      {% for pc in pcs %}
+      <div class="pc-card {{ pc.status }}"
+        data-pcnum="{{ '%02d'|format(pc.pcnum) }}"
+        data-status="{{ pc.status }}"
+        data-last-boot="{{ pc.last_boot }}"
+        data-last-off="{{ pc.last_off }}"
+        data-uptime="{{ pc.uptime or '' }}">
+        <div class="pc-number">{{ '%02d'|format(pc.pcnum) }}</div>
+        <div>
+          <div class="status-label">
+            {% if pc.status == 'on' %}On{% elif pc.status == 'off' %}Off{% else %}No log{% endif %}
+          </div>
+          <div class="status-time">{{ pc.label }}</div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+
+  </div>
+
+  <div class="modal-overlay" id="modalOverlay" hidden>
+    <div class="modal-panel">
+      <h3 id="modalPcNumber">PC</h3>
+      <div class="modal-status" id="modalStatus"></div>
+      <div class="modal-row">
+        <span class="row-label">Last booted</span>
+        <span class="row-value" id="modalLastBoot"></span>
+      </div>
+      <div class="modal-row">
+        <span class="row-label">Last shut down</span>
+        <span class="row-value" id="modalLastOff"></span>
+      </div>
+      <div class="modal-row" id="modalUptimeRow">
+        <span class="row-label" id="modalUptimeLabel">On for</span>
+        <span class="row-value" id="modalUptime"></span>
+      </div>
+      <button class="modal-close" id="modalClose">Close</button>
+    </div>
+  </div>
+
 
 <script>
+  const overlay = document.getElementById('modalOverlay');
 
-    const room_datas = {{ room_datas | tojson }};
+  function openModal(card) {
+    const d = card.dataset;
+    document.getElementById('modalPcNumber').textContent = 'PC ' + d.pcnum;
 
-    console.log("YES" , room_datas)
+    const statusEl = document.getElementById('modalStatus');
+    statusEl.className = 'modal-status ' + d.status;
+    statusEl.textContent = d.status === 'on' ? 'Currently on'
+      : d.status === 'off' ? 'Currently off'
+      : 'No recent log for this PC';
+
+    document.getElementById('modalLastBoot').textContent = d.lastBoot;
+    document.getElementById('modalLastOff').textContent = d.lastOff;
+
+    const uptimeRow = document.getElementById('modalUptimeRow');
+    if (d.uptime) {
+      uptimeRow.hidden = false;
+      document.getElementById('modalUptimeLabel').textContent = d.status === 'on' ? 'On for' : 'Was on for';
+      document.getElementById('modalUptime').textContent = d.uptime;
+    } else {
+      uptimeRow.hidden = true;
+    }
+
+    overlay.hidden = false;
+  }
+
+  function closeModal() {
+    overlay.hidden = true;
+  }
+
+  document.querySelectorAll('.pc-card').forEach(card => {
+    card.addEventListener('click', () => openModal(card));
+  });
+
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) closeModal();
+  });
+
+  document.getElementById('modalClose').addEventListener('click', closeModal);
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !overlay.hidden) closeModal();
+  });
 </script>
 
-
+</body>
 </html>
