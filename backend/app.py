@@ -59,11 +59,13 @@ def create_app():
         pcs = [p.to_dict() for p in pcs]
         rooms_data = build_room_status(pcs, rooms)
         generated_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
         return render_template(
             "mainmenu.html",
             rooms=rooms,
             rooms_data=rooms_data,
             pcs_per_room=pcs_per_room,
+            
             generated_at=generated_at,
         )
 
@@ -100,7 +102,7 @@ def create_app():
     def metrics():
         pcs = PcLog.query.order_by(PcLog.id.desc()).limit(3000).all()
         pcs = [p.to_dict() for p in pcs]
-        rooms_data = build_room_status(pcs, ROOMS)
+        rooms_data = build_room_status(pcs, rooms)
     
         for room, stats in rooms_data.items():
             lab_pcs_status.labels(room=room, status='on').set(stats['on'])
@@ -138,6 +140,35 @@ def format_date(value):
         
     return value
 
+def parse_datetime(value):
+    if isinstance(value, datetime):
+        return value
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except (TypeError, ValueError):
+        return None
+
+def format_duration(time):
+    total_minutes = int(time.total_seconds() // 60)
+
+    if total_minutes <= 0:
+        return 'from the future'
+    if total_minutes < 1:
+        return 'less than a minute'
+    days, rem = divmod(total_minutes, 1440)
+    hours, minutes = divmod(rem, 60)
+    parts = []
+    if days:
+        parts.append(f'{days}d')
+    if hours:
+        parts.append(f'{hours}h')
+    if minutes and not days:
+        parts.append(f'{minutes}m')
+    return ' '.join(parts) if parts else '0m'
+
+
 def build_room_status(pcs, rooms):
     latest_by_host = {}
     for p in pcs:
@@ -171,36 +202,80 @@ def build_room_status(pcs, rooms):
     # # print("datas : ", data, flush=True)
     return data
 
+
 def build_pc_details(logs):
-    latest_by_host = {}
+    per_host = {}
     for entry in logs:
         hostname = entry.get('hostname', '')
-        # print("hostname : ", hostname, flush=True)
-        # print("\n")
         if len(hostname) < 2 or not hostname[-2:].isdigit():
-            continue
-        if hostname in latest_by_host:
             continue
         pcnum = int(hostname[-2:])
         if not (1 <= pcnum <= pcs_per_room):
             continue
-        if entry.get('event_type') == "Shutdown":
+
+        event_type = entry.get('event_type')
+        created_at = parse_datetime(entry.get('created_at'))
+        if created_at is None:
+            continue
+
+        host = per_host.setdefault(hostname, {'pcnum': pcnum, 'last_boot': None, 'last_off': None})
+
+        if event_type == "Shutdown":
+            if host['last_off'] is None or created_at > host['last_off']:
+                host['last_off'] = created_at
+        else:
+            if host['last_boot'] is None or created_at > host['last_boot']:
+                host['last_boot'] = created_at
+
+    now = datetime.now()
+    by_pcnum = {}
+    for host in per_host.values():
+        last_boot = host['last_boot']
+        last_off = host['last_off']
+
+        if last_boot and (not last_off or last_boot > last_off):
+            status = 'on'
+        elif last_off:
             status = 'off'
         else:
-            status = 'on'
-        ts = format_date(entry.get('created_at')) or 'unknown time'
-        label = f'Turned on at {ts}' if status == 'on' else f'Shut down at {ts}'
-        latest_by_host[hostname] = {'pcnum': pcnum, 'status': status, 'label': label}
-    
-    # print("logs: ", logs, flush=True)
+            status = 'unknown'
 
-    by_pcnum = {e['pcnum']: e for e in latest_by_host.values()}
+        uptime = None
+        if status == 'on' and last_boot:
+            print("uptime1 : ", now - last_boot, flush=True)
+            uptime = format_duration(now - last_boot)
+        elif status == 'off' and last_boot and last_off:
+            print("uptime2 : ", now - last_boot, flush=True)
+            uptime = format_duration(last_off - last_boot)
+
+        ts = last_boot if status == 'on' else last_off
+        if status == 'on':
+            label = f'Turned on at {format_date(ts)}'
+        elif status == 'off':
+            label = f'Shut down at {format_date(ts)}'
+        else:
+            label = 'No recent log'
+
+        by_pcnum[host['pcnum']] = {
+            'pcnum': host['pcnum'],
+            'status': status,
+            'label': label,
+            'last_boot': format_date(last_boot) or 'No boot log',
+            'last_off': format_date(last_off) or 'No shutdown log',
+            'uptime': uptime,
+        }
+
     pcs = []
     for i in range(1, pcs_per_room + 1):
-        pcs.append(by_pcnum.get(i) or {'pcnum': i, 'status': 'unknown', 'label': 'No recent log'})
-    # print("pcs: ", pcs, flush=True)
+        pcs.append(by_pcnum.get(i) or {
+            'pcnum': i,
+            'status': 'unknown',
+            'label': 'No recent log',
+            'last_boot': 'No boot log',
+            'last_off': 'No shutdown log',
+            'uptime': None,
+        })
     return pcs
-
 
 app = create_app()
 # Auto-create tables when running directly (dev convenience).
