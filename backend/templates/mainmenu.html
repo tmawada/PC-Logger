@@ -1,6 +1,6 @@
 <!DOCTYPE html>
-  <html lang="en">
-  <head>
+<html lang="en">
+<head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>PC Loggig</title>
@@ -12,7 +12,6 @@
     <div class="topbar">
       <div class="title-block">
         <h1>PC Logging</h1>
-        <p>{{ rooms|length }} rooms · {{ pcs_per_room }} PCs each</p>
       </div>
       {% include "refresh_button.html" %}
       <form class="search-form" id="searchForm">
@@ -21,9 +20,6 @@
       </form>
     </div>
 
-    <div class="">
-      Total PCS Turned On
-    </div>
 
     <div class="room-grid" id="roomGrid"></div>
 

@@ -35,6 +35,7 @@
         data-pcnum="{{ '%02d'|format(pc.pcnum) }}"
         data-status="{{ pc.status }}"
         data-last-boot="{{ pc.last_boot }}"
+        data-last-restart="{{ pc.last_restart }}"
         data-last-off="{{ pc.last_off }}"
         data-uptime="{{ pc.uptime or '' }}">
         <div class="pc-number">{{ '%02d'|format(pc.pcnum) }}</div>
@@ -62,6 +63,10 @@
         <span class="row-label">Last shut down</span>
         <span class="row-value" id="modalLastOff"></span>
       </div>
+      <div class="modal-row" id="modalRestartRow">
+        <span class="row-label" id="modalRestartLabel">Last Restart</span>
+        <span class="row-value" id="modalRestart"></span>
+      </div>
       <div class="modal-row" id="modalUptimeRow">
         <span class="row-label" id="modalUptimeLabel">On for</span>
         <span class="row-value" id="modalUptime"></span>
@@ -76,6 +81,7 @@
 
   function openModal(card) {
     const d = card.dataset;
+    <!-- console.log("Res : d", d) -->
     document.getElementById('modalPcNumber').textContent = 'PC ' + d.pcnum;
 
     const statusEl = document.getElementById('modalStatus');
@@ -86,6 +92,7 @@
 
     document.getElementById('modalLastBoot').textContent = d.lastBoot;
     document.getElementById('modalLastOff').textContent = d.lastOff;
+    document.getElementById('modalRestart').textContent = d.lastRestart
 
     const uptimeRow = document.getElementById('modalUptimeRow');
     if (d.uptime) {

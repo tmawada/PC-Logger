@@ -23,7 +23,7 @@
     min-height: 100vh;
   }
 
-  .dashboard { max-width: 1180px; margin: 0 auto; padding: 28px 20px 60px; }
+  .dashboard { max-width: 80vw; margin: 0 auto; padding: 28px 20px 60px; }
 
   .topbar {
     display: flex;
@@ -37,7 +37,7 @@
   }
 
   .title-block h1 {
-    font-size: 1.5rem;
+    font-size: 4rem;
     font-weight: 600;
     margin: 0 0 4px;
     letter-spacing: -0.01em;

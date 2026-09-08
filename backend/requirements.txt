@@ -7,3 +7,4 @@ gunicorn==23.0.0
 python-dotenv==1.1.0
 gevent
 prometheus_flask_exporter
+pytz

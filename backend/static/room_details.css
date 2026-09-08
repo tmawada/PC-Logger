@@ -22,7 +22,7 @@
     min-height: 100vh;
   }
 
-  .page { max-width: 1180px; margin: 0 auto; padding: 28px 20px 60px; }
+  .page { max-width: 95vw; margin: 0 auto; padding: 28px 20px 60px; }
 
   .topbar {
     display: flex;
@@ -77,8 +77,9 @@
 
   .pc-grid {
     display: grid;
-    grid-template-columns: repeat(8, 1fr);
+    grid-template-columns: repeat(10, 2fr);
     gap: 12px;
+    /* background-color: red; */
   }
 
   .pc-card {
