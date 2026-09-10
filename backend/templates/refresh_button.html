@@ -1,0 +1,67 @@
+<div class="refresh-bar">
+  <a href="./monitoring" class="nav-link">Monitoring</a>
+  <span class="refresh-text">Auto-refreshes every 30s · updated {{ generated_at }}</span>
+  <button type="button" class="refresh-btn" id="refreshBtn">Refresh</button>
+</div>
+
+<style>
+  .refresh-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    font-family: var(--mono);
+  }
+
+  .live-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--on);
+    flex-shrink: 0;
+    animation: refresh-pulse 2s infinite;
+  }
+
+  @keyframes refresh-pulse {
+    0% { box-shadow: 0 0 0 0 rgba(79, 174, 142, 0.5); }
+    70% { box-shadow: 0 0 0 6px rgba(79, 174, 142, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(79, 174, 142, 0); }
+  }
+
+  
+  .nav-link {
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    text-decoration: none;
+    border: 1px solid var(--border);
+    padding: 8px 14px;
+    border-radius: 4px;
+    margin-right: 2vw;
+    font-family: var(--mono);
+    align-self: center;
+  }
+
+  .nav-link:hover { border-color: var(--accent); color: var(--accent); }
+
+  .refresh-btn {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-size: 0.78rem;
+    padding: 6px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-family: var(--sans);
+  }
+
+  .refresh-btn:hover { border-color: var(--accent); color: var(--accent); }
+</style>
+
+<script>
+  (function () {
+    const REFRESH_MS = 30000;
+    document.getElementById('refreshBtn').addEventListener('click', () => window.location.reload());
+    setInterval(() => window.location.reload(), REFRESH_MS);
+  })();
+</script>

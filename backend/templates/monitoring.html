@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Monitoring</title>
+    <link rel="stylesheet" href="./static/monitoring.css">
+</head>
+<body>
+<div class="page">
+
+  <div class="topbar">
+    <div>
+      <a class="back-link" href="/main">Back to dashboard</a>
+      <h1>Monitoring</h1>
+      <p class="subtitle">Lab infrastructure metrics via Prometheus &amp; Grafana</p>
+    </div>
+  </div>
+
+  <div class="frame-wrap">
+    <iframe src="{{ grafana_url }}" title="Grafana dashboard" loading="lazy"></iframe>
+  </div>
+
+  <p class="fallback-note">
+    If this doesn't load, Grafana embedding may need enabling
+    (<code>allow_embedding = true</code> in <code>grafana.ini</code>), or open it directly:
+    <a href="{{ grafana_url }}" target="_blank" rel="noopener">{{ grafana_url }}</a>
+  </p>
+
+</div>
+</body>
+</html>
