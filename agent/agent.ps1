@@ -3,7 +3,16 @@ param(
     [ValidateSet("Boot", "Shutdown", "Restart")]
     [string]$EventType,
 
-    [switch]$Wait
+    [switch]$Wait,
+
+    # Source tag folded into the message, e.g. AdminBulk, Watcher, GPO,
+    # Wrapper, BootTask, Task1074. The backend has no `source` column,
+    # so this keeps bulk admin actions identifiable in message text.
+    [string]$Source = '',
+
+    # Skip the slow Get-WinEvent lookup and use this message directly.
+    # Used by the watcher / GPO sender which already parsed Event ID 1074.
+    [string]$MessageOverride = ''
 )
 
 Set-StrictMode -Version Latest
@@ -11,6 +20,7 @@ $ErrorActionPreference = 'Stop'
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $configPath = Join-Path $scriptDir 'config.json'
+$cacheDir = Join-Path $scriptDir 'cache'
 
 if (-not (Test-Path $configPath)) {
     Write-Error "Config file not found: $configPath"
@@ -25,39 +35,25 @@ try {
 }
 
 $apiUrl = $config.api_url
-$timeoutSeconds = if ($config.timeout) { [int]$config.timeout } else { 5 }
-$retryCount = if ($config.retry) { [int]$config.retry } else { 2 }
+$timeoutSeconds = if ($config.timeout) { [int]$config.timeout } else { 15 }
+$retryCount = if ($config.retry) { [int]$config.retry } else { 3 }
+$startupDelay = if ($config.startup_delay) { [int]$config.startup_delay } else { 10 }
 
 $hostname = $env:COMPUTERNAME
 if (-not $hostname) {
     $hostname = [System.Net.Dns]::GetHostName()
 }
 
-function Get-EventMessage {
-    param([string]$EventType)
-
-    switch ($EventType) {
-        'Boot' { return 'Operating System Started' }
-        'Shutdown' { return 'Normal Shutdown' }
-        'Restart' {
-            try {
-                $event = Get-WinEvent -FilterHashtable @{ LogName = 'System'; ProviderName = 'User32'; Id = 1074 } -MaxEvents 1 -ErrorAction Stop
-                if ($event -and $event.Message) {
-                    return ($event.Message.Trim().Split([Environment]::NewLine)[0])
-                }
-            } catch {
-                Write-Warning "Could not read restart event: $($_.Exception.Message)"
-            }
-            return 'Restart'
-        }
-        default { return $EventType }
-    }
-}
-
 function Resolve-EventData {
-    param([string]$EventType)
+    param([string]$Type)
 
-    switch ($EventType) {
+    # Caller already knows the message (watcher/GPO parsed 1074).
+    # Send immediately - no Event Log lookup on the shutdown path.
+    if ($MessageOverride) {
+        return @{ Type = $Type; Message = $MessageOverride }
+    }
+
+    switch ($Type) {
         'Boot' {
             return @{ Type = 'Boot'; Message = 'Operating System Started' }
         }
@@ -69,17 +65,12 @@ function Resolve-EventData {
                 $event = Get-WinEvent -FilterHashtable @{ LogName = 'System'; ProviderName = 'User32'; Id = 1074 } -MaxEvents 1 -ErrorAction Stop
                 if ($event -and $event.Message) {
                     $message = $event.Message.Trim().Split([Environment]::NewLine)[0]
-                    $resolvedType = if ($message -match 'initiated the restart') {
-                        'Restart'
-                    } elseif ($message -match 'initiated the shutdown') {
-                        'Shutdown'
-                    } elseif ($message -match 'restart') {
-                        'Restart'
-                    } elseif ($message -match 'shutdown') {
-                        'Shutdown'
-                    } else {
-                        'Restart'
-                    }
+                    $resolvedType = if ($message -match 'initiated the restart') { 'Restart' }
+                                   elseif ($message -match 'initiated the shutdown') { 'Shutdown' }
+                                   elseif ($message -match 'power off') { 'Shutdown' }
+                                   elseif ($message -match 'restart') { 'Restart' }
+                                   elseif ($message -match 'shutdown') { 'Shutdown' }
+                                   else { 'Restart' }
                     return @{ Type = $resolvedType; Message = $message }
                 }
             } catch {
@@ -87,17 +78,15 @@ function Resolve-EventData {
             }
             return @{ Type = 'Restart'; Message = 'Restart Initiated' }
         }
-        default {
-            return @{ Type = $EventType; Message = $EventType }
-        }
+        default { return @{ Type = $Type; Message = $Type } }
     }
 }
 
-$eventData = Resolve-EventData -EventType $EventType
-
+$eventData = Resolve-EventData -Type $EventType
 $message = $eventData.Message
-
-
+if ($Source) {
+    $message = "[$Source] $message"
+}
 $createdAt = (Get-Date).ToString('yyyy-MM-ddTHH:mm:ss.fff')
 
 $payload = @{
@@ -109,16 +98,41 @@ $payload = @{
 
 $jsonPayload = $payload | ConvertTo-Json -Compress
 
-Write-Host "Sending $EventType event for $hostname to $apiUrl"
+Write-Host "Sending $($eventData.Type) event for $hostname to $apiUrl"
 
-# Only apply jitter for scheduled tasks (not -Wait), to spread 41 PCs
-if (-not $Wait) {
-    $jitter = Get-Random -Minimum 0 -Maximum 30000
-    Write-Host "Jitter: $jitter ms"
-    Start-Sleep -Milliseconds $jitter
+# Outbox: failed shutdown-time sends are cached here and flushed on next
+# Boot. Requires a UWF file exclusion on this folder (see install.ps1),
+# otherwise the cache is wiped before Boot can flush it.
+function Write-Cache {
+    try {
+        if (-not (Test-Path $cacheDir)) {
+            New-Item -ItemType Directory -Path $cacheDir -Force | Out-Null
+        }
+        $name = 'failed-{0}-{1}.json' -f (Get-Date -Format 'yyyyMMddHHmmss'),
+            ([Guid]::NewGuid().ToString('N').Substring(0, 8))
+        $jsonPayload | Out-File -LiteralPath (Join-Path $cacheDir $name) -Encoding ascii
+        Write-Warning "Send failed, cached to $name for flush on next Boot"
+    } catch {
+        Write-Warning "Cache write failed: $($_.Exception.Message)"
+    }
 }
 
-# Synchronous send with full retry (used for Boot only)
+function Flush-Cache {
+    if (-not (Test-Path $cacheDir)) { return }
+    $files = Get-ChildItem -LiteralPath $cacheDir -Filter '*.json' -ErrorAction SilentlyContinue
+    foreach ($f in $files) {
+        try {
+            $body = Get-Content -LiteralPath $f.FullName -Raw
+            Invoke-RestMethod -Uri $apiUrl -Method Post -ContentType 'application/json' -Body $body -TimeoutSec $timeoutSeconds | Out-Null
+            Remove-Item -LiteralPath $f.FullName -Force
+            Write-Host "Flushed cached event: $($f.Name)"
+        } catch {
+            Write-Warning "Flush failed for $($f.Name), keeping for next Boot"
+        }
+    }
+}
+
+# ===== Synchronous send with exponential backoff (Boot path) =====
 function Send-Synchronous {
     for ($attempt = 1; $attempt -le $retryCount; $attempt++) {
         try {
@@ -128,73 +142,74 @@ function Send-Synchronous {
         } catch {
             $errorMessage = $_.Exception.Message
             Write-Warning "Attempt $attempt/$retryCount failed: $errorMessage"
-            if ($attempt -lt $retryCount) { Start-Sleep -Seconds 2 }
+            if ($attempt -lt $retryCount) {
+                $backoff = [Math]::Pow(2, $attempt) * 1000 + (Get-Random -Minimum 0 -Maximum 500)
+                Write-Host "Retrying in $backoff ms..."
+                Start-Sleep -Milliseconds $backoff
+            }
         }
     }
     return $false
 }
 
-# Fire-and-forget async (used for Shutdown/Restart from scheduled tasks)
-function Send-Async {
-    Start-Job -ScriptBlock {
-        param($url, $payload, $timeout)
-        try {
-            Invoke-RestMethod -Uri $url -Method Post -ContentType 'application/json' -Body $payload -TimeoutSec $timeout -ErrorAction SilentlyContinue
-        } catch { }
-    } -ArgumentList $apiUrl, $jsonPayload, $timeoutSeconds | Out-Null
-    Write-Host "$EventType event dispatched (async)"
-    Start-Sleep -Milliseconds 500
+# ===== Fast single-shot send (shutdown paths): 3s timeout, cache on failure =====
+function Send-Quick {
+    try {
+        Invoke-RestMethod -Uri $apiUrl -Method Post -ContentType 'application/json' -Body $jsonPayload -TimeoutSec 3 | Out-Null
+        Write-Host "$($eventData.Type) event sent successfully"
+    } catch {
+        Write-Cache
+    }
 }
 
 if ($EventType -eq 'Boot') {
-    # Boot: always synchronous with full retry
+    # Wait for the backend to be reachable (fresh boot). TCP probe, NOT
+    # ICMP ping: ping is commonly firewalled while HTTP works, and a
+    # failed Test-Connection would burn the whole startup_delay (10s)
+    # on EVERY boot before even trying the POST.
+    $uri = [Uri]$apiUrl
+    $targetHost = $uri.Host
+    $targetPort = if ($uri.Port -eq -1) { 80 } else { $uri.Port }
+    $deadline = (Get-Date).AddSeconds($startupDelay)
+    $connected = $false
+    while ((Get-Date) -lt $deadline) {
+        try {
+            $client = New-Object Net.Sockets.TcpClient
+            $iar = $client.BeginConnect($targetHost, $targetPort, $null, $null)
+            if ($iar.AsyncWaitHandle.WaitOne(2000)) {
+                $client.EndConnect($iar)
+                $connected = $true
+                $client.Close()
+                break
+            }
+            $client.Close()
+        } catch {}
+        Start-Sleep -Milliseconds 1000
+    }
+    if (-not $connected) {
+        Write-Warning "Backend $targetHost`:$targetPort not reachable after ${startupDelay}s, trying POST anyway"
+    }
+
+    # No jitter: the backend (replicas + PgBouncer) absorbs whole-room
+    # boot bursts fine, and retry/backoff covers transient failures.
+    Flush-Cache
     $success = Send-Synchronous
     exit (if ($success) { 0 } else { 1 })
 }
-elseif ($EventType -eq 'Shutdown') {
+elseif ($EventType -eq 'Shutdown' -or $EventType -eq 'Restart') {
     if ($Wait) {
-        # Manual wrapper: synchronous with SHORT timeout (admin waiting), 1 retry max
-        for ($attempt = 1; $attempt -le 1; $attempt++) {
-            try {
-                Invoke-RestMethod -Uri $apiUrl -Method Post -ContentType 'application/json' -Body $jsonPayload -TimeoutSec 3 | Out-Null
-                Write-Host "Shutdown event sent successfully"
-                exit 0
-            } catch {
-                Write-Warning "Shutdown log failed: $($_.Exception.Message)"
-            }
+        # Wrapper path (admin waiting, shutdown -t 30 window): one short attempt.
+        try {
+            Invoke-RestMethod -Uri $apiUrl -Method Post -ContentType 'application/json' -Body $jsonPayload -TimeoutSec 5 | Out-Null
+            Write-Host "$($eventData.Type) event sent successfully"
+        } catch {
+            Write-Warning "$($eventData.Type) log failed: $($_.Exception.Message)"
+            Write-Cache
         }
-        exit 0  # Continue shutdown even if log fails
+        exit 0  # never block shutdown/restart
     } else {
-        # Group Policy / scheduled: async fire-and-forget
-        Send-Async
-        exit 0
-    }
-}
-elseif ($EventType -eq 'Restart') {
-    if ($Wait) {
-        # Manual wrapper: synchronous with SHORT timeout (admin waiting), 1 retry max
-        for ($attempt = 1; $attempt -le 1; $attempt++) {
-            try {
-                Invoke-RestMethod -Uri $apiUrl -Method Post -ContentType 'application/json' -Body $jsonPayload -TimeoutSec 3 | Out-Null
-                Write-Host "Restart event sent successfully"
-                exit 0
-            } catch {
-                Write-Warning "Restart log failed: $($_.Exception.Message)"
-            }
-        }
-        exit 0  # Continue restart even if log fails
-    } else {
-        # Event 1074 trigger: synchronous with short timeout (fires at initiation)
-        for ($attempt = 1; $attempt -le $retryCount; $attempt++) {
-            try {
-                Invoke-RestMethod -Uri $apiUrl -Method Post -ContentType 'application/json' -Body $jsonPayload -TimeoutSec 3 | Out-Null
-                Write-Host "Restart event sent successfully"
-                exit 0
-            } catch {
-                if ($attempt -lt $retryCount) { Start-Sleep -Milliseconds 500 }
-            }
-        }
-        Write-Warning "Restart event failed after $retryCount attempts"
+        # Shutdown-time path (1074 task / GPO): NO jitter, send immediately.
+        Send-Quick
         exit 0
     }
 }
