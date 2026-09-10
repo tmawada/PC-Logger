@@ -4,18 +4,18 @@
   "metadata": {
     "name": "pc-logging-overview",
     "namespace": "default",
-    "uid": "14031726-332d-480b-a634-26c68c4e1c66",
-    "resourceVersion": "1788778217540006",
-    "generation": 12,
-    "creationTimestamp": "2026-09-07T04:42:25Z",
+    "uid": "f90548a2-4479-4ca4-ae37-a10224523558",
+    "resourceVersion": "1789036223151996",
+    "generation": 3,
+    "creationTimestamp": "2026-09-10T10:14:02Z",
     "labels": {
-      "grafana.app/deprecatedInternalID": "2647541679296512"
+      "grafana.app/deprecatedInternalID": "3818157637300224"
     },
     "annotations": {
-      "grafana.app/createdBy": "user:efxfyrb52h340d",
+      "grafana.app/createdBy": "user:bfxtnyd2zaww0c",
       "grafana.app/saved-from-ui": "Grafana v13.2.1 (56cd3e9288)",
-      "grafana.app/updatedBy": "user:efxfyrb52h340d",
-      "grafana.app/updatedTimestamp": "2026-09-07T10:50:17Z"
+      "grafana.app/updatedBy": "user:bfxtnyd2zaww0c",
+      "grafana.app/updatedTimestamp": "2026-09-10T10:30:23Z"
     }
   },
   "spec": {
@@ -62,7 +62,7 @@
                       "group": "prometheus",
                       "version": "v0",
                       "datasource": {
-                        "name": "bfxfz3nuwomioa"
+                        "name": "ffxto2mvpqkn4d"
                       },
                       "spec": {
                         "expr": "sum(lab_pcs_status{status=\"on\"})"
@@ -140,10 +140,12 @@
                       "group": "prometheus",
                       "version": "v0",
                       "datasource": {
-                        "name": "bfxfz3nuwomioa"
+                        "name": "ffxto2mvpqkn4d"
                       },
                       "spec": {
-                        "expr": "sum(lab_pcs_status{status=\"off\"})"
+                        "editorMode": "code",
+                        "expr": "sum(lab_pcs_status{status=\"off\"})",
+                        "range": true
                       }
                     },
                     "refId": "A",
@@ -382,12 +384,12 @@
                       "group": "prometheus",
                       "version": "v0",
                       "datasource": {
-                        "name": "bfxfz3nuwomioa"
+                        "name": "ffxto2mvpqkn4d"
                       },
                       "spec": {
                         "editorMode": "builder",
                         "exemplar": false,
-                        "expr": "pc_lab_longest_running",
+                        "expr": "pc_lab_top_longest_running_seconds",
                         "format": "time_series",
                         "instant": true,
                         "interval": "",
@@ -411,9 +413,9 @@
             "spec": {
               "options": {
                 "colorMode": "background",
-                "graphMode": "area",
+                "graphMode": "none",
                 "justifyMode": "auto",
-                "orientation": "vertical",
+                "orientation": "auto",
                 "percentChangeColorMode": "standard",
                 "reduceOptions": {
                   "calcs": [
@@ -424,12 +426,12 @@
                 },
                 "showPercentChange": false,
                 "text": {},
-                "textMode": "value_and_name",
-                "wideLayout": false
+                "textMode": "auto",
+                "wideLayout": true
               },
               "fieldConfig": {
                 "defaults": {
-                  "displayName": "${__field.labels.hostname} (${__field.labels.room})",
+                  "displayName": "PC ${__field.labels.pcnum} (${__field.labels.room})",
                   "unit": "dtdhms",
                   "thresholds": {
                     "mode": "absolute",
@@ -439,7 +441,11 @@
                         "color": "green"
                       },
                       {
-                        "value": 80,
+                        "value": 50,
+                        "color": "#EAB839"
+                      },
+                      {
+                        "value": 100,
                         "color": "red"
                       }
                     ]

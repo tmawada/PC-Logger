@@ -1,6 +1,5 @@
 from gevent import monkey
 monkey.patch_all()
-
 from flask import Flask, render_template
 from config import Config
 from database import init_db, db
@@ -12,8 +11,8 @@ import threading
 import time
 from zoneinfo import ZoneInfo
 import pytz
-
 from gevent.pywsgi import WSGIServer
+import gevent
 from prometheus_flask_exporter import PrometheusMetrics
 from prometheus_client import Gauge, Counter, generate_latest, CONTENT_TYPE_LATEST
 
@@ -27,24 +26,29 @@ pcs_per_room = 41
 events = {'boot', 'restart'}
 
 
-GRAFANA_URL = "http://localhost:3000/d/pc-logging-overview/pc-logging?orgId=1&kiosk&theme=dark"
- 
+GRAFANA_URL = "http://localhost:3000/d/pc-logging-overview/pc-logging-overview"
+
 lab_pcs_status = Gauge(
     'lab_pcs_status', 'Current PC status count per room', ['room', 'status']
 )
 
-pc_lab_longest_running = Gauge(
-    'pc_lab_longest_running', 'Lab PC that has been running the longest', ['room', 'hostname']
+pc_lab_top_longest_running_seconds = Gauge(
+    'pc_lab_top_longest_running_seconds',
+    'Uptime in seconds of the top 20 longest-running PCs',
+    ['rank', 'room', 'hostname', 'pcnum']
 )
 
- 
+
 
 def create_app():
     app = Flask(__name__)
     app.config.from_object(Config)
+    # print("Called create_app, app :  ", app, flush=True)
     metrics = PrometheusMetrics(app)
-
-    init_db(app)
+    try:
+        init_db(app)
+    except:
+        print("[INFO] DB FAILED TO CONNECT")
     app.register_blueprint(api)
 
     @app.route("/")
@@ -64,7 +68,7 @@ def create_app():
             rooms=rooms,
             rooms_data=rooms_data,
             pcs_per_room=pcs_per_room,
-            
+
             generated_at=generated_at,
         )
 
@@ -74,7 +78,7 @@ def create_app():
         room_id_data = PcLog.query.filter(PcLog.hostname.like(room_prefix)).order_by(PcLog.id.desc()).limit(5000).all()
         room_id_data = [d.to_dict() for d in room_id_data]
 
-        # pc data -> last restart, last shutdown, last turned on        
+        # pc data -> last restart, last shutdown, last turned on
         # # print("room prefix", room_prefix, flush=True)
         # # print("room_id_data: ", room_id_data, flush=True)
         pcs = build_pc_details(room_id_data)
@@ -99,7 +103,7 @@ def create_app():
         return render_template("event_log.html")
 
 
-    
+
     @app.route("/monitoring")
     def monitoring():
         return render_template("monitoring.html", grafana_url=GRAFANA_URL)
@@ -112,10 +116,10 @@ def format_date(value):
             value = datetime.fromisoformat(value)
         except ValueError:
             return value
-            
+
     if isinstance(value, datetime):
         return value.strftime('%b %d, %H:%M')
-        
+
     return value
 
 def parse_datetime(value):
@@ -152,7 +156,7 @@ def format_duration(time):
     return ' '.join(parts) if parts else '0m'
 
 
-def update_longest_running():
+def update_longest_running(top_n=20):
     logs = PcLog.query.order_by(PcLog.id.desc()).all()
     logs = [p.to_dict() for p in logs]
 
@@ -166,8 +170,8 @@ def update_longest_running():
         created_at = parse_datetime(entry.get('created_at'))
         if created_at is None:
             continue
-
-        host = per_host.setdefault(hostname, {'room': room, 'last_boot': None, 'last_off': None})
+        pcnum = int(hostname[-2:])
+        host = per_host.setdefault(hostname, {'room': room,'pcnum': pcnum, 'last_boot': None, 'last_off': None})
         if event_type == "Shutdown":
             if host['last_off'] is None or created_at > host['last_off']:
                 host['last_off'] = created_at
@@ -175,53 +179,40 @@ def update_longest_running():
             if host['last_boot'] is None or created_at > host['last_boot']:
                 host['last_boot'] = created_at
 
-
-
-    now =  datetime.now()
-    longest_hostname = None
-    longest_room = None
-    longest_seconds = -1
-
+    indonesia_timezone = pytz.timezone('Asia/Jakarta')
+    time_raw =  datetime.now(indonesia_timezone)
+    now = time_raw.replace(tzinfo=None)
+    running = []
     for hostname, host in per_host.items():
         is_on = host['last_boot'] and (not host['last_off'] or host['last_boot'] > host['last_off'])
         if not is_on:
             continue
         uptime_seconds = (now - host['last_boot']).total_seconds()
-        if uptime_seconds > longest_seconds:
-            longest_seconds = uptime_seconds
-            longest_hostname = hostname
-            longest_room = host['room']
+        running.append((uptime_seconds, hostname, host['room'], host['pcnum']))
 
-    pc_lab_longest_running.clear()
-    if longest_hostname is not None:
-        pc_lab_longest_running.labels(room=longest_room, hostname=longest_hostname).set(longest_seconds)
+    running.sort(reverse=True)
+    top = running[:top_n]
+
+    pc_lab_top_longest_running_seconds.clear()
+    for rank, (uptime_seconds, hostname, room, pcnum) in enumerate(top, start=1):
+        pc_lab_top_longest_running_seconds.labels(rank=str(rank), room=room, hostname=f'PC {hostname}', pcnum=pcnum).set(uptime_seconds)
+
+
 
 def update_metrics_once():
     pcs = PcLog.query.order_by(PcLog.id.desc()).limit(3000).all()
     pcs = [p.to_dict() for p in pcs]
     rooms_data = build_room_status(pcs, rooms)
- 
+
     for room, stats in rooms_data.items():
         lab_pcs_status.labels(room=room, status='on').set(stats['on'])
         lab_pcs_status.labels(room=room, status='off').set(stats['off'])
         lab_pcs_status.labels(room=room, status='unknown').set(stats['unknown'])
- 
- 
- 
-def update_metrics_loop():
-    while True:
-        try:
-            with app.app_context():
-                update_metrics_once()
-                update_longest_running()
-        except Exception as e:
-                import traceback
-                traceback.print_exc()
-        time.sleep(30)
- 
- 
-threading.Thread(target=update_metrics_loop, daemon=True).start()
- 
+
+
+
+
+
 def build_room_status(pcs, rooms):
     latest_by_host = {}
     for p in pcs:
@@ -342,15 +333,35 @@ def build_pc_details(logs):
     return pcs
 
 app = create_app()
+# print("Test:", app , flush=True)
 # Auto-create tables when running directly (dev convenience).
 # In production, use Flask-Migrate instead.
+print("NAME : ", __name__, flush=True)
 with app.app_context():
     db.create_all()
+    
+def update_metrics_loop():
+    while True:
+        try:
+            with app.app_context():
+                update_metrics_once()
+                update_longest_running()
+        except Exception as e:
+                import traceback
+                traceback.print_exc()
+        time.sleep(30)
+
+print("NAME : ", __name__, flush=True)
+
+threading.Thread(target=update_metrics_loop, daemon=True).start()
+print("NAME : ", __name__, flush=True)
 
 if __name__ == "__main__":
+    # print("MAIN CALLED", flush=True)
     # # print("testrun", flush=True)
     # app.run(host="0.0.0.0", port=5000, debug=True)
     http_server = WSGIServer(('0.0.0.0', 5000), app)
     http_server.serve_forever()
 
     # app.run(host="0.0.0.0", port=5000, debug=True, threaded=True)
+
