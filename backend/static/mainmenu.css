@@ -153,3 +153,17 @@
   @media (max-width: 560px) {
     .search-form input { width: 140px; }
   }
+
+  .nav-link {
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    text-decoration: none;
+    border: 1px solid var(--border);
+    padding: 8px 14px;
+    border-radius: 4px;
+    margin-right: 2vw;
+    font-family: var(--mono);
+    align-self: center;
+  }
+
+  .nav-link:hover { border-color: var(--accent); color: var(--accent); }
