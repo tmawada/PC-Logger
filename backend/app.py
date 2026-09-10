@@ -5,16 +5,13 @@ from config import Config
 from database import init_db, db
 from routes import api
 from models import PcLog
-from collections import OrderedDict
 from datetime import datetime
 import threading
 import time
-from zoneinfo import ZoneInfo
 import pytz
 from gevent.pywsgi import WSGIServer
-import gevent
 from prometheus_flask_exporter import PrometheusMetrics
-from prometheus_client import Gauge, Counter, generate_latest, CONTENT_TYPE_LATEST
+from prometheus_client import Gauge
 
 
 rooms =  ['601','602','603','604','605','606','608','610','611',
@@ -43,7 +40,6 @@ pc_lab_top_longest_running_seconds = Gauge(
 def create_app():
     app = Flask(__name__)
     app.config.from_object(Config)
-    # print("Called create_app, app :  ", app, flush=True)
     metrics = PrometheusMetrics(app)
     try:
         init_db(app)
@@ -78,11 +74,7 @@ def create_app():
         room_id_data = PcLog.query.filter(PcLog.hostname.like(room_prefix)).order_by(PcLog.id.desc()).limit(5000).all()
         room_id_data = [d.to_dict() for d in room_id_data]
 
-        # pc data -> last restart, last shutdown, last turned on
-        # # print("room prefix", room_prefix, flush=True)
-        # # print("room_id_data: ", room_id_data, flush=True)
         pcs = build_pc_details(room_id_data)
-        # print("FETCHED INFO FOR ROOM ", room_id, flush=True)
         on_count = sum(1 for p in pcs if p['status'] == 'on')
         off_count = sum(1 for p in pcs if p['status'] == 'off')
         return render_template(
@@ -133,12 +125,7 @@ def parse_datetime(value):
         return None
 
 def format_duration(time):
-    # print("time : ", time )
-    # print("\n")
-    # print("time, total seconds : ", time.total_seconds())
-
     total_minutes = int(time.total_seconds() // 60)
-    # print("Uptime : ", total_minutes)
 
     if total_minutes <= 0:
         return 'from the future'
@@ -233,7 +220,6 @@ def build_room_status(pcs, rooms):
             'room': room,
             'status': pcStatus,
         }
-    # # print("pcs: ", pcs, flush=True)
     data = {}
     for room in rooms:
         on_count = sum(1 for e in latest_by_host.values() if e['room'] == room and e['status'] == 'on')
@@ -243,7 +229,6 @@ def build_room_status(pcs, rooms):
             'off': off_count,
             'unknown': pcs_per_room - on_count - off_count,
         }
-    # # print("datas : ", data, flush=True)
     return data
 
 
@@ -276,12 +261,9 @@ def build_pc_details(logs):
             if host['last_boot'] is None or created_at > host['last_boot']:
                 host['last_boot'] = created_at
 
-    # current_time_indonesia = datetime.now(indonesia_timezone)
-    # print("indo time : ", current_time_indonesia, flush=True)
     indonesia_timezone = pytz.timezone('Asia/Jakarta')
     time_raw =  datetime.now(indonesia_timezone)
     now = time_raw.replace(tzinfo=None)
-    # print("Time now : ", now, flush=True)
     by_pcnum = {}
     for host in per_host.values():
         last_boot = host['last_boot']
@@ -333,7 +315,6 @@ def build_pc_details(logs):
     return pcs
 
 app = create_app()
-# print("Test:", app , flush=True)
 # Auto-create tables when running directly (dev convenience).
 # In production, use Flask-Migrate instead.
 print("NAME : ", __name__, flush=True)
@@ -351,17 +332,11 @@ def update_metrics_loop():
                 traceback.print_exc()
         time.sleep(30)
 
-print("NAME : ", __name__, flush=True)
 
 threading.Thread(target=update_metrics_loop, daemon=True).start()
-print("NAME : ", __name__, flush=True)
 
 if __name__ == "__main__":
-    # print("MAIN CALLED", flush=True)
-    # # print("testrun", flush=True)
-    # app.run(host="0.0.0.0", port=5000, debug=True)
     http_server = WSGIServer(('0.0.0.0', 5000), app)
     http_server.serve_forever()
 
-    # app.run(host="0.0.0.0", port=5000, debug=True, threaded=True)
 
