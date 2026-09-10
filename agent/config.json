@@ -1,5 +1,6 @@
 {
-  "api_url": "http://10.22.65.146:80/api/log",
-  "timeout": 5,
-  "retry": 2
+  "api_url": "http://10.22.65.146/api/log",
+  "timeout": 15,
+  "retry": 3,
+  "startup_delay": 10
 }

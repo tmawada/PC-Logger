@@ -1,0 +1,198 @@
+  :root {
+    --bg: #14171C;
+    --surface: #1B1F26;
+    --border: #2A2F39;
+    --text: #E7E9EE;
+    --text-muted: #8B92A2;
+    --accent: #C9A227;
+    --on: #4FAE8E;
+    --off: #BE5A46;
+    --unknown: #3A3F4A;
+    --mono: ui-monospace, "SFMono-Regular", "JetBrains Mono", Consolas, monospace;
+    --sans: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    min-height: 100vh;
+  }
+
+  .page { max-width: 95vw; margin: 0 auto; padding: 28px 20px 60px; }
+
+  .topbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    flex-wrap: wrap;
+    gap: 16px;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 20px;
+    margin-bottom: 24px;
+  }
+
+  .back-link {
+    display: inline-block;
+    color: var(--text-muted);
+    font-size: 0.82rem;
+    text-decoration: none;
+    margin-bottom: 10px;
+  }
+
+  .back-link:hover { color: var(--accent); }
+
+  .title-block h1 {
+    font-family: var(--mono);
+    font-size: 1.6rem;
+    font-weight: 600;
+    margin: 0 0 6px;
+  }
+
+  .title-block .summary {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    font-family: var(--mono);
+  }
+
+  .title-block .summary .on-count { color: var(--on); }
+  .title-block .summary .off-count { color: var(--off); }
+
+  .legend {
+    display: flex;
+    gap: 18px;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+  }
+
+  .legend span { display: flex; align-items: center; gap: 6px; }
+
+  .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+  .dot.on { background: var(--on); }
+  .dot.off { background: var(--off); }
+  .dot.unknown { background: var(--unknown); border: 1px solid var(--border); }
+
+  .pc-grid {
+    display: grid;
+    grid-template-columns: repeat(10, 2fr);
+    gap: 12px;
+    /* background-color: red; */
+  }
+
+  .pc-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--unknown);
+    border-radius: 4px;
+    padding: 16px;
+    min-height: 108px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+  }
+
+  .pc-card.on { border-left-color: var(--on); }
+  .pc-card.off { border-left-color: var(--off); }
+
+  .pc-card .pc-number {
+    font-family: var(--mono);
+    font-size: 1.6rem;
+    font-weight: 700;
+  }
+
+  .pc-card .status-label {
+    font-size: 0.78rem;
+    font-family: var(--mono);
+    margin-top: 4px;
+    color: var(--text-muted);
+  }
+
+  .pc-card.on .status-label { color: var(--on); }
+  .pc-card.off .status-label { color: var(--off); }
+
+  .pc-card .status-time {
+    font-size: 0.76rem;
+    font-family: var(--mono);
+    color: var(--text-muted);
+    margin-top: 12px;
+  }
+
+  @media (max-width: 900px) {
+    .pc-grid { grid-template-columns: repeat(4, 1fr); }
+  }
+
+  @media (max-width: 480px) {
+    .pc-grid { grid-template-columns: repeat(2, 1fr); }
+  }
+
+  .pc-card { transition: border-color 0.12s ease; }
+  .pc-card:hover { border-color: var(--accent); cursor: pointer; }
+
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(10, 12, 15, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    z-index: 50;
+  }
+
+  .modal-overlay[hidden] { display: none; }
+
+  .modal-panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 24px 26px;
+    width: 100%;
+    max-width: 320px;
+  }
+
+  .modal-panel h3 {
+    font-family: var(--mono);
+    font-size: 1.3rem;
+    margin: 0 0 6px;
+  }
+
+  .modal-status {
+    font-size: 0.8rem;
+    font-family: var(--mono);
+    margin-bottom: 16px;
+    color: var(--text-muted);
+  }
+
+  .modal-status.on { color: var(--on); }
+  .modal-status.off { color: var(--off); }
+
+  .modal-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    font-size: 0.84rem;
+    padding: 9px 0;
+    border-top: 1px solid var(--border);
+  }
+
+  .modal-row:first-of-type { border-top: none; }
+
+  .modal-row .row-label { color: var(--text-muted); }
+  .modal-row .row-value { font-family: var(--mono); text-align: right; }
+
+  .modal-close {
+    margin-top: 18px;
+    width: 100%;
+    padding: 9px;
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.85rem;
+  }
+
+  .modal-close:hover { border-color: var(--accent); color: var(--accent); }
