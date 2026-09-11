@@ -23,7 +23,7 @@ pcs_per_room = 41
 events = {'boot', 'restart'}
 
 
-GRAFANA_URL = "http://localhost:3000/d/pc-logging-overview/pc-logging-overview"
+GRAFANA_URL = "http://localhost:3000/d/pc-logging-overview/pc-logging-overview?kiosk"
 
 lab_pcs_status = Gauge(
     'lab_pcs_status', 'Current PC status count per room', ['room', 'status']
