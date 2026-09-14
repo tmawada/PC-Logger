@@ -164,6 +164,7 @@
     margin-right: 2vw;
     font-family: var(--mono);
     align-self: center;
+    margin-top: 10vh;
   }
 
   .nav-link:hover { border-color: var(--accent); color: var(--accent); }
