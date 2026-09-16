@@ -9,9 +9,14 @@ from datetime import datetime
 import threading
 import time
 import pytz
+import sys
+import os
 from gevent.pywsgi import WSGIServer
 from prometheus_flask_exporter import PrometheusMetrics
 from prometheus_client import Gauge
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "model"))
+from seed import ROOM_RATES, get_room_rate, seed_data  # noqa: E402
 
 
 rooms =  ['601','602','603','604','605','606','608','610','611',
@@ -36,6 +41,22 @@ pc_lab_top_longest_running_seconds = Gauge(
 )
 
 
+# Live cost/hour and kWh/hour per room, driven by on_count * rate from
+# ROOM_RATES (backend/model/seed.py, sourced from cost.xlsx). Value is the
+# actual metric (Rp/h or kWh/h); rank+room are the only labels so this
+# doesn't create a new series per float value.
+pc_lab_cost_per_room = Gauge(
+    'pc_lab_cost_per_room',
+    'Live electricity cost (Rp/hour) for the room, based on PCs currently on',
+    ['rank', 'room']
+)
+
+pc_lab_kwh_per_room = Gauge(
+    'pc_lab_kwh_per_room',
+    'Live power draw (kWh/hour) for the room, based on PCs currently on',
+    ['rank', 'room']
+)
+
 
 def create_app():
     app = Flask(__name__)
@@ -46,11 +67,6 @@ def create_app():
     except:
         print("[INFO] DB FAILED TO CONNECT")
     app.register_blueprint(api)
-
-    @app.route("/")
-    def dashboard():
-        return render_template("index.html")
-
 
     @app.route("/main")
     def main_menu():
@@ -77,6 +93,7 @@ def create_app():
         pcs = build_pc_details(room_id_data)
         on_count = sum(1 for p in pcs if p['status'] == 'on')
         off_count = sum(1 for p in pcs if p['status'] == 'off')
+        rate = get_room_rate(room_id)
         return render_template(
             "room_details.html",
             room_id=room_id,
@@ -84,16 +101,10 @@ def create_app():
             on_count=on_count,
             off_count=off_count,
             unknown_count=pcs_per_room - on_count - off_count,
+            kwh_per_hour=round(rate['kwh_per_pc_hour'] * on_count, 3),
+            cost_per_hour=round(rate['cost_per_pc_hour'] * on_count),
+            cost_per_pc_hour=rate['cost_per_pc_hour'],
         )
-
-    @app.route("/logs")
-    def logs_page():
-        return render_template("logs.html")
-
-    @app.route("/event-log")
-    def event_log_page():
-        return render_template("event_log.html")
-
 
 
     @app.route("/monitoring")
@@ -186,7 +197,7 @@ def update_longest_running(top_n=20):
 
 
 
-def update_metrics_once():
+def update_metrics_once(top_n=20):
     pcs = PcLog.query.order_by(PcLog.id.desc()).limit(3000).all()
     pcs = [p.to_dict() for p in pcs]
     rooms_data = build_room_status(pcs, rooms)
@@ -195,6 +206,23 @@ def update_metrics_once():
         lab_pcs_status.labels(room=room, status='on').set(stats['on'])
         lab_pcs_status.labels(room=room, status='off').set(stats['off'])
         lab_pcs_status.labels(room=room, status='unknown').set(stats['unknown'])
+
+    # Live cost/kWh per hour, ranked, mirroring update_longest_running().
+    room_costs = []
+    for room, stats in rooms_data.items():
+        rate = get_room_rate(room)
+        cost_per_hour = rate['cost_per_pc_hour'] * stats['on']
+        kwh_per_hour = rate['kwh_per_pc_hour'] * stats['on']
+        room_costs.append((cost_per_hour, kwh_per_hour, room))
+
+    room_costs.sort(reverse=True)
+    top = room_costs[:top_n]
+
+    pc_lab_cost_per_room.clear()
+    pc_lab_kwh_per_room.clear()
+    for rank, (cost_per_hour, kwh_per_hour, room) in enumerate(top, start=1):
+        pc_lab_cost_per_room.labels(rank=str(rank), room=room).set(round(cost_per_hour, 2))
+        pc_lab_kwh_per_room.labels(rank=str(rank), room=room).set(round(kwh_per_hour, 3))
 
 
 
@@ -320,7 +348,12 @@ app = create_app()
 print("NAME : ", __name__, flush=True)
 with app.app_context():
     db.create_all()
-    
+    try:
+        seed_data()
+    except Exception:
+        import traceback
+        traceback.print_exc()
+
 def update_metrics_loop():
     while True:
         try:

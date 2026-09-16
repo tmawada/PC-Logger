@@ -19,6 +19,10 @@
           </div>
         </div>
       </div>
+      <div class="cost-block">
+        <div class="cost-value">Rp {{ '{:,.0f}'.format(cost_per_hour).replace(',', '.') }}<span class="cost-unit">/hour</span></div>
+        <div class="cost-sub">{{ '%.2f'|format(kwh_per_hour) }} kWh/hour · Rp {{ '{:,.0f}'.format(cost_per_pc_hour).replace(',', '.') }}/PC/hour</div>
+      </div>
       <div class="legend">
         <span><span class="dot on"></span>On</span>
         <span><span class="dot off"></span>Off</span>
