@@ -25,6 +25,19 @@
 
     <div class="room-grid" id="roomGrid"></div>
 
+    <div class="counter-bar">
+      <div class="counter-card">
+        <div class="counter-label">Projected total (avg uptime)</div>
+        <div class="counter-value">Rp {{ '{:,.0f}'.format(total_projected_cost).replace(',', '.') }}</div>
+        <div class="counter-sub">{{ '%.2f'|format(avg_uptime_hours) }} h avg uptime · Rp {{ '{:,.0f}'.format(total_cost_per_hour).replace(',', '.') }}/hour</div>
+      </div>
+      <div class="counter-card">
+        <div class="counter-label">Total per-hour counter (all rooms)</div>
+        <div class="counter-value">Rp {{ '{:,.0f}'.format(total_cost_per_hour).replace(',', '.') }}<span class="counter-unit">/hour</span></div>
+        <div class="counter-sub">{{ total_on }} PC on · {{ '%.2f'|format(total_kwh_per_hour) }} kWh/hour</div>
+      </div>
+    </div>
+
   </div>
 
 

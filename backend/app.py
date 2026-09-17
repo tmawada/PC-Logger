@@ -41,10 +41,6 @@ pc_lab_top_longest_running_seconds = Gauge(
 )
 
 
-# Live cost/hour and kWh/hour per room, driven by on_count * rate from
-# ROOM_RATES (backend/model/seed.py, sourced from cost.xlsx). Value is the
-# actual metric (Rp/h or kWh/h); rank+room are the only labels so this
-# doesn't create a new series per float value.
 pc_lab_cost_per_room = Gauge(
     'pc_lab_cost_per_room',
     'Live electricity cost (Rp/hour) for the room, based on PCs currently on',
@@ -54,6 +50,12 @@ pc_lab_cost_per_room = Gauge(
 pc_lab_kwh_per_room = Gauge(
     'pc_lab_kwh_per_room',
     'Live power draw (kWh/hour) for the room, based on PCs currently on',
+    ['rank', 'room']
+)
+
+pc_lab_projected_cost_per_room = Gauge(
+    'pc_lab_projected_cost_per_room',
+    'Projected total electricity cost (Rp) for the room = avg uptime (h) * live Rp/hour',
     ['rank', 'room']
 )
 
@@ -75,6 +77,37 @@ def create_app():
         rooms_data = build_room_status(pcs, rooms)
         generated_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
+        room_numbers = [f"BN{roomid}" for roomid in rooms]
+        room_datas = [PcLog.query.filter(PcLog.hostname.like(room_number)).order_by(PcLog.id.desc()).limit(5000).all() for room_number in room_numbers]
+        print("Room Datas: ", room_datas , flush=True)
+        room_datas = []
+        print("Room Datas 2 : ", room_datas , flush=True)
+
+        total_on = 0
+        total_cost_per_hour = 0.0
+        total_kwh_per_hour = 0.0
+        total_projected_cost = 0.0
+        all_uptime_hours = []
+        for room in rooms:
+            stats = rooms_data.get(room, {'on': 0})
+            rate = get_room_rate(room)
+            room_cost_per_hour = rate['cost_per_pc_hour'] * stats['on']
+            total_on += stats['on']
+            total_cost_per_hour += room_cost_per_hour
+            total_kwh_per_hour += rate['kwh_per_pc_hour'] * stats['on']
+
+            room_prefix = f"BN{room}%"
+            room_logs = PcLog.query.filter(PcLog.hostname.like(room_prefix)).order_by(PcLog.id.desc()).limit(5000).all()
+            room_logs = [d.to_dict() for d in room_logs]
+            room_pcs = build_pc_details(room_logs)
+            room_uptimes = [p['uptime_hours'] for p in room_pcs if p.get('uptime_hours') is not None]
+            if room_uptimes:
+                room_avg_uptime = sum(room_uptimes) / len(room_uptimes)
+                total_projected_cost += room_cost_per_hour * room_avg_uptime
+                all_uptime_hours.extend(room_uptimes)
+
+        avg_uptime_hours = (sum(all_uptime_hours) / len(all_uptime_hours)) if all_uptime_hours else 0.0
+
         return render_template(
             "mainmenu.html",
             rooms=rooms,
@@ -82,18 +115,34 @@ def create_app():
             pcs_per_room=pcs_per_room,
 
             generated_at=generated_at,
+            total_on=total_on,
+            total_cost_per_hour=round(total_cost_per_hour),
+            total_kwh_per_hour=round(total_kwh_per_hour, 3),
+            total_projected_cost=round(total_projected_cost),
+            avg_uptime_hours=round(avg_uptime_hours, 2),
         )
+
+    # def query_room_number(hostname):
+        
 
     @app.route("/main/room/<room_id>")
     def get_room_details(room_id):
         room_prefix = f"BN{room_id}%"
         room_id_data = PcLog.query.filter(PcLog.hostname.like(room_prefix)).order_by(PcLog.id.desc()).limit(5000).all()
         room_id_data = [d.to_dict() for d in room_id_data]
-
+        # print("Room id data : ", room_id_data, flush=True)
         pcs = build_pc_details(room_id_data)
         on_count = sum(1 for p in pcs if p['status'] == 'on')
         off_count = sum(1 for p in pcs if p['status'] == 'off')
         rate = get_room_rate(room_id)
+
+        cost_per_hour = round(rate['cost_per_pc_hour'] * on_count)
+
+        uptime_values = [p['uptime_hours'] for p in pcs if p.get('uptime_hours') is not None]
+        avg_uptime_hours = (sum(uptime_values) / len(uptime_values)) if uptime_values else 0.0
+
+        total_cost_avg = round(cost_per_hour * avg_uptime_hours)
+
         return render_template(
             "room_details.html",
             room_id=room_id,
@@ -102,8 +151,10 @@ def create_app():
             off_count=off_count,
             unknown_count=pcs_per_room - on_count - off_count,
             kwh_per_hour=round(rate['kwh_per_pc_hour'] * on_count, 3),
-            cost_per_hour=round(rate['cost_per_pc_hour'] * on_count),
+            cost_per_hour=cost_per_hour,
             cost_per_pc_hour=rate['cost_per_pc_hour'],
+            avg_uptime_hours=round(avg_uptime_hours, 2),
+            total_cost_avg=total_cost_avg,
         )
 
 
@@ -206,23 +257,33 @@ def update_metrics_once(top_n=20):
         lab_pcs_status.labels(room=room, status='on').set(stats['on'])
         lab_pcs_status.labels(room=room, status='off').set(stats['off'])
         lab_pcs_status.labels(room=room, status='unknown').set(stats['unknown'])
-
-    # Live cost/kWh per hour, ranked, mirroring update_longest_running().
+    
     room_costs = []
     for room, stats in rooms_data.items():
         rate = get_room_rate(room)
         cost_per_hour = rate['cost_per_pc_hour'] * stats['on']
         kwh_per_hour = rate['kwh_per_pc_hour'] * stats['on']
-        room_costs.append((cost_per_hour, kwh_per_hour, room))
+
+        room_prefix = f"BN{room}%"
+        room_logs = PcLog.query.filter(PcLog.hostname.like(room_prefix)).order_by(PcLog.id.desc()).limit(5000).all()
+        room_logs = [d.to_dict() for d in room_logs]
+        room_pcs = build_pc_details(room_logs)
+        uptime_values = [p['uptime_hours'] for p in room_pcs if p.get('uptime_hours') is not None]
+        avg_uptime_hours = (sum(uptime_values) / len(uptime_values)) if uptime_values else 0.0
+        projected_cost = cost_per_hour * avg_uptime_hours
+
+        room_costs.append((cost_per_hour, kwh_per_hour, projected_cost, room))
 
     room_costs.sort(reverse=True)
     top = room_costs[:top_n]
 
     pc_lab_cost_per_room.clear()
     pc_lab_kwh_per_room.clear()
-    for rank, (cost_per_hour, kwh_per_hour, room) in enumerate(top, start=1):
+    pc_lab_projected_cost_per_room.clear()
+    for rank, (cost_per_hour, kwh_per_hour, projected_cost, room) in enumerate(top, start=1):
         pc_lab_cost_per_room.labels(rank=str(rank), room=room).set(round(cost_per_hour, 2))
         pc_lab_kwh_per_room.labels(rank=str(rank), room=room).set(round(kwh_per_hour, 3))
+        pc_lab_projected_cost_per_room.labels(rank=str(rank), room=room).set(round(projected_cost, 2))
 
 
 
@@ -307,10 +368,17 @@ def build_pc_details(logs):
             status = 'unknown'
 
         uptime = None
+        uptime_hours = None
         if status == 'on' and last_on:
-            uptime = format_duration(now - last_on)
+            _delta = now - last_on
+            uptime = format_duration(_delta)
+            uptime_hours = _delta.total_seconds() / 3600
         elif status == 'off' and last_on and last_off:
-            uptime = format_duration(last_off - last_on)
+            _delta = last_off - last_on
+            uptime = format_duration(_delta)
+            uptime_hours = _delta.total_seconds() / 3600
+        if uptime_hours is not None and uptime_hours < 0:
+            uptime_hours = None
 
         if status == 'on':
             label = f'Turned on at {format_date(last_on)}'
@@ -327,6 +395,7 @@ def build_pc_details(logs):
             'last_restart': format_date(last_restart) or 'No restart log',
             'last_off': format_date(last_off) or 'No shutdown log',
             'uptime': uptime,
+            'uptime_hours': uptime_hours,
         }
 
     pcs = []
@@ -339,6 +408,7 @@ def build_pc_details(logs):
             'last_restart': 'No restart log',
             'last_off': 'No shutdown log',
             'uptime': None,
+            'uptime_hours': None,
         })
     return pcs
 

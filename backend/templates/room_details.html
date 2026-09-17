@@ -19,10 +19,6 @@
           </div>
         </div>
       </div>
-      <div class="cost-block">
-        <div class="cost-value">Rp {{ '{:,.0f}'.format(cost_per_hour).replace(',', '.') }}<span class="cost-unit">/hour</span></div>
-        <div class="cost-sub">{{ '%.2f'|format(kwh_per_hour) }} kWh/hour · Rp {{ '{:,.0f}'.format(cost_per_pc_hour).replace(',', '.') }}/PC/hour</div>
-      </div>
       <div class="legend">
         <span><span class="dot on"></span>On</span>
         <span><span class="dot off"></span>Off</span>
@@ -51,6 +47,19 @@
         </div>
       </div>
       {% endfor %}
+    </div>
+
+    <div class="counter-bar">
+      <div class="counter-card">
+        <div class="counter-label">Projected total (avg uptime)</div>
+        <div class="counter-value">Rp {{ '{:,.0f}'.format(total_cost_avg).replace(',', '.') }}</div>
+        <div class="counter-sub">{{ '%.2f'|format(avg_uptime_hours) }} h avg uptime × Rp {{ '{:,.0f}'.format(cost_per_hour).replace(',', '.') }}/hour</div>
+      </div>
+      <div class="counter-card">
+        <div class="counter-label">Per-hour counter</div>
+        <div class="counter-value">Rp {{ '{:,.0f}'.format(cost_per_hour).replace(',', '.') }}<span class="counter-unit">/hour</span></div>
+        <div class="counter-sub">{{ on_count }} PC on · {{ '%.2f'|format(kwh_per_hour) }} kWh/hour</div>
+      </div>
     </div>
 
   </div>
@@ -82,7 +91,6 @@
 
 <script>
   const overlay = document.getElementById('modalOverlay');
-
   function openModal(card) {
     const d = card.dataset;
     <!-- console.log("Res : d", d) -->
@@ -103,6 +111,7 @@
       uptimeRow.hidden = false;
       document.getElementById('modalUptimeLabel').textContent = d.status === 'on' ? 'On for' : 'Was on for';
       document.getElementById('modalUptime').textContent = d.uptime;
+      
     } else {
       uptimeRow.hidden = true;
     }
