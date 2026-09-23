@@ -48,8 +48,7 @@
             <div class="stat-caption">used today</div>
           </div>
         </div>
-        <div class="counter-pcs">{{ '%.2f'|format(total_on_hours_today) }} h total on-time (all PCs, all rooms)</div>
-        <div class="counter-hint">Sum of every PC's individual on-time today, from 00:00 to now, across every room.</div>
+        <div class="counter-hint">Total of all PCs turned on today (From 00.00 to now)\</div>
       </div>
       <div class="counter-card">
         <div class="counter-label">Live rate right now (per hour, all rooms)</div>
@@ -64,7 +63,7 @@
           </div>
         </div>
         <div class="counter-pcs">{{ total_on }} PC on</div>
-        <div class="counter-hint">What it would cost if the {{ total_on }} PCs currently on across all rooms stayed on for one full hour. It is a live rate, not an actual charge.</div>
+        <div class="counter-hint">The cost of all room if {{ on_count }} PCs are currently on stayed on for one full hour.</div>
       </div>
     </div>
 

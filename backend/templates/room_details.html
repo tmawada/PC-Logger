@@ -76,7 +76,7 @@
         <div class="counter-hint">Sum of every PC's individual on-time today, from 00:00 to now.</div>
       </div>
       <div class="counter-card">
-        <div class="counter-label">Live rate right now (per hour on this room)</div>
+        <div class="counter-label">Live rate right now (For {{on_count}} online PCs) per hour on this room</div>
         <div class="counter-stats">
           <div class="stat">
             <div class="stat-value">Rp {{ '{:,.0f}'.format(cost_per_hour).replace(',', '.') }}<span class="stat-unit">/hour</span></div>
@@ -87,7 +87,7 @@
             <div class="stat-caption">power draw</div>
           </div>
         </div>
-        <div class="counter-pcs">{{ on_count }} PC on ( Rp {{ '{:.2f}'.format(cost_per_pc_hour).replace('.', ',') }} and {{ '{:.5f}'.format(kwh_per_pc_hour) }} kWh per PC per hour )</div>
+        <div class="counter-pcs">( Rp {{ '{:.2f}'.format(cost_per_pc_hour).replace('.', ',') }} and {{ '{:.5f}'.format(kwh_per_pc_hour) }} kWh per PC per hour )</div>
         <div class="counter-hint">The cost of all room if {{ on_count }} PCs are currently on stayed on for one full hour.</div>
       </div>
     </div>
