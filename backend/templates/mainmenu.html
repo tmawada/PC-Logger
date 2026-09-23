@@ -4,7 +4,13 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>PC Loggig</title>
-  <link rel="stylesheet" href="/static/mainmenu.css">
+  <link rel="stylesheet" href="/static/mainmenu.css?v=3">
+  <script>
+    (function () {
+      const t = localStorage.getItem('pclogger-theme');
+      if (t === 'light') document.documentElement.setAttribute('data-theme', 'light');
+    })();
+  </script>
 </head>
 <body>
   <div class="dashboard">
@@ -13,7 +19,11 @@
       <div class="title-block">
         <h1>PC Logging</h1>
       </div>
-      <a href="./monitoring" class="nav-link">Monitoring</a>
+      <div class="topbar-actions">
+        <a href="./monitoring" class="nav-link">Monitoring</a>
+        <a href="/main/export" class="export-link" title="Download this room grid and cost figures as an Excel file">Export Excel</a>
+        <button type="button" id="themeToggle" class="theme-toggle" title="Toggle light/dark theme">Dark mode</button>
+      </div>
 
       {% include "refresh_button.html" %}
       <form class="search-form" id="searchForm">
@@ -27,20 +37,41 @@
 
     <div class="counter-bar">
       <div class="counter-card">
-        <div class="counter-label">Projected total (avg uptime)</div>
-        <div class="counter-value">Rp {{ '{:,.0f}'.format(total_projected_cost).replace(',', '.') }}</div>
-        <div class="counter-sub">{{ '%.2f'|format(avg_uptime_hours) }} h avg uptime · Rp {{ '{:,.0f}'.format(total_cost_per_hour).replace(',', '.') }}/hour</div>
+        <div class="counter-label">Cost today (based on actual on-time so far)</div>
+        <div class="counter-stats">
+          <div class="stat">
+            <div class="stat-value">Rp {{ '{:,.0f}'.format(total_cost_today).replace(',', '.') }}</div>
+            <div class="stat-caption">cost today</div>
+          </div>
+          <div class="stat">
+            <div class="stat-value">{{ '%.2f'|format(total_kwh_today) }} kWh</div>
+            <div class="stat-caption">used today</div>
+          </div>
+        </div>
+        <div class="counter-pcs">{{ '%.2f'|format(total_on_hours_today) }} h total on-time (all PCs, all rooms)</div>
+        <div class="counter-hint">Sum of every PC's individual on-time today, from 00:00 to now, across every room.</div>
       </div>
       <div class="counter-card">
-        <div class="counter-label">Total per-hour counter (all rooms)</div>
-        <div class="counter-value">Rp {{ '{:,.0f}'.format(total_cost_per_hour).replace(',', '.') }}<span class="counter-unit">/hour</span></div>
-        <div class="counter-sub">{{ total_on }} PC on · {{ '%.2f'|format(total_kwh_per_hour) }} kWh/hour</div>
+        <div class="counter-label">Live rate right now (per hour, all rooms)</div>
+        <div class="counter-stats">
+          <div class="stat">
+            <div class="stat-value">Rp {{ '{:,.0f}'.format(total_cost_per_hour).replace(',', '.') }}<span class="stat-unit">/hour</span></div>
+            <div class="stat-caption">live rate</div>
+          </div>
+          <div class="stat">
+            <div class="stat-value">{{ '%.2f'|format(total_kwh_per_hour) }} kWh<span class="stat-unit">/hour</span></div>
+            <div class="stat-caption">power draw</div>
+          </div>
+        </div>
+        <div class="counter-pcs">{{ total_on }} PC on</div>
+        <div class="counter-hint">What it would cost if the {{ total_on }} PCs currently on across all rooms stayed on for one full hour. It is a live rate, not an actual charge.</div>
       </div>
     </div>
 
   </div>
 
 
+  <script src="/static/theme.js"></script>
   <script>
 
 
@@ -73,7 +104,7 @@
           <div class="room-number">${room}</div>
           <div class="room-counts">
             <span class="on-count">${stats.on} on</span>
-            <span class="off-count">${stats.off} off</spaZn>
+            <span class="off-count">${stats.off} off</span>
           </div>
           <div class="proportion-bar">
             <div class="seg-on" style="width:${onPct}%"></div>

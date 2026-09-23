@@ -53,12 +53,6 @@ pc_lab_kwh_per_room = Gauge(
     ['rank', 'room']
 )
 
-pc_lab_projected_cost_per_room = Gauge(
-    'pc_lab_projected_cost_per_room',
-    'Projected total electricity cost (Rp) for the room = avg uptime (h) * live Rp/hour',
-    ['rank', 'room']
-)
-
 
 def create_app():
     app = Flask(__name__)
@@ -77,17 +71,12 @@ def create_app():
         rooms_data = build_room_status(pcs, rooms)
         generated_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
-        room_numbers = [f"BN{roomid}" for roomid in rooms]
-        room_datas = [PcLog.query.filter(PcLog.hostname.like(room_number)).order_by(PcLog.id.desc()).limit(5000).all() for room_number in room_numbers]
-        print("Room Datas: ", room_datas , flush=True)
-        room_datas = []
-        print("Room Datas 2 : ", room_datas , flush=True)
-
         total_on = 0
         total_cost_per_hour = 0.0
         total_kwh_per_hour = 0.0
-        total_projected_cost = 0.0
-        all_uptime_hours = []
+        total_cost_today = 0.0
+        total_kwh_today = 0.0
+        total_on_hours_today = 0.0
         for room in rooms:
             stats = rooms_data.get(room, {'on': 0})
             rate = get_room_rate(room)
@@ -99,14 +88,11 @@ def create_app():
             room_prefix = f"BN{room}%"
             room_logs = PcLog.query.filter(PcLog.hostname.like(room_prefix)).order_by(PcLog.id.desc()).limit(5000).all()
             room_logs = [d.to_dict() for d in room_logs]
-            room_pcs = build_pc_details(room_logs)
-            room_uptimes = [p['uptime_hours'] for p in room_pcs if p.get('uptime_hours') is not None]
-            if room_uptimes:
-                room_avg_uptime = sum(room_uptimes) / len(room_uptimes)
-                total_projected_cost += room_cost_per_hour * room_avg_uptime
-                all_uptime_hours.extend(room_uptimes)
-
-        avg_uptime_hours = (sum(all_uptime_hours) / len(all_uptime_hours)) if all_uptime_hours else 0.0
+            today_on_seconds = compute_today_on_seconds(room_logs)
+            room_on_hours_today = sum(today_on_seconds.values()) / 3600.0
+            total_kwh_today += rate['kwh_per_pc_hour'] * room_on_hours_today
+            total_cost_today += rate['cost_per_pc_hour'] * room_on_hours_today
+            total_on_hours_today += room_on_hours_today
 
         return render_template(
             "mainmenu.html",
@@ -118,8 +104,46 @@ def create_app():
             total_on=total_on,
             total_cost_per_hour=round(total_cost_per_hour),
             total_kwh_per_hour=round(total_kwh_per_hour, 3),
-            total_projected_cost=round(total_projected_cost),
-            avg_uptime_hours=round(avg_uptime_hours, 2),
+            total_cost_today=round(total_cost_today),
+            total_kwh_today=round(total_kwh_today, 3),
+            total_on_hours_today=round(total_on_hours_today, 2),
+        )
+
+    @app.route("/main/export")
+    def export_main():
+        pcs = PcLog.query.order_by(PcLog.id.desc()).limit(3000).all()
+        pcs = [p.to_dict() for p in pcs]
+        rooms_data = build_room_status(pcs, rooms)
+
+        rows = []
+        for room in rooms:
+            stats = rooms_data.get(room, {'on': 0, 'off': 0, 'unknown': pcs_per_room})
+            rate = get_room_rate(room)
+
+            room_prefix = f"BN{room}%"
+            room_logs = PcLog.query.filter(PcLog.hostname.like(room_prefix)).order_by(PcLog.id.desc()).limit(5000).all()
+            room_logs = [d.to_dict() for d in room_logs]
+            today_on_seconds = compute_today_on_seconds(room_logs)
+            room_on_hours_today = sum(today_on_seconds.values()) / 3600.0
+
+            rows.append({
+                "Room": room,
+                "PCs On": stats['on'],
+                "PCs Off": stats['off'],
+                "Unknown": stats['unknown'],
+                "Rp/hour (live)": round(rate['cost_per_pc_hour'] * stats['on']),
+                "kWh/hour (live)": round(rate['kwh_per_pc_hour'] * stats['on'], 3),
+                "On-hours today (sum, all PCs)": round(room_on_hours_today, 2),
+                "kWh today": round(rate['kwh_per_pc_hour'] * room_on_hours_today, 3),
+                "Rp today": round(rate['cost_per_pc_hour'] * room_on_hours_today),
+            })
+
+        return build_excel_response(
+            sheet_title="All Rooms",
+            headers=["Room", "PCs On", "PCs Off", "Unknown", "Rp/hour (live)",
+                     "kWh/hour (live)", "On-hours today (sum, all PCs)", "kWh today", "Rp today"],
+            rows=rows,
+            filename=f"pc-logger-rooms-{datetime.now().strftime('%Y%m%d-%H%M%S')}.xlsx",
         )
 
     # def query_room_number(hostname):
@@ -138,10 +162,10 @@ def create_app():
 
         cost_per_hour = round(rate['cost_per_pc_hour'] * on_count)
 
-        uptime_values = [p['uptime_hours'] for p in pcs if p.get('uptime_hours') is not None]
-        avg_uptime_hours = (sum(uptime_values) / len(uptime_values)) if uptime_values else 0.0
-
-        total_cost_avg = round(cost_per_hour * avg_uptime_hours)
+        today_on_seconds = compute_today_on_seconds(room_id_data)
+        on_hours_today = sum(today_on_seconds.values()) / 3600.0
+        kwh_today = round(rate['kwh_per_pc_hour'] * on_hours_today, 3)
+        cost_today = round(rate['cost_per_pc_hour'] * on_hours_today)
 
         return render_template(
             "room_details.html",
@@ -153,8 +177,43 @@ def create_app():
             kwh_per_hour=round(rate['kwh_per_pc_hour'] * on_count, 3),
             cost_per_hour=cost_per_hour,
             cost_per_pc_hour=rate['cost_per_pc_hour'],
-            avg_uptime_hours=round(avg_uptime_hours, 2),
-            total_cost_avg=total_cost_avg,
+            kwh_per_pc_hour=rate['kwh_per_pc_hour'],
+            on_hours_today=round(on_hours_today, 2),
+            kwh_today=kwh_today,
+            cost_today=cost_today,
+        )
+
+    @app.route("/main/room/<room_id>/export")
+    def export_room(room_id):
+        room_prefix = f"BN{room_id}%"
+        room_id_data = PcLog.query.filter(PcLog.hostname.like(room_prefix)).order_by(PcLog.id.desc()).limit(5000).all()
+        room_id_data = [d.to_dict() for d in room_id_data]
+        pcs = build_pc_details(room_id_data)
+        rate = get_room_rate(room_id)
+        today_on_seconds = compute_today_on_seconds(room_id_data)
+
+        rows = []
+        for pc in pcs:
+            hostname = f"BN{room_id}{pc['pcnum']:02d}"
+            on_hours_today = today_on_seconds.get(hostname, 0.0) / 3600.0
+            rows.append({
+                "PC": pc['pcnum'],
+                "Status": pc['status'],
+                "Last boot": pc['last_boot'],
+                "Last restart": pc['last_restart'],
+                "Last shutdown": pc['last_off'],
+                "Uptime (current session)": pc['uptime'] or '',
+                "On-hours today": round(on_hours_today, 2),
+                "kWh today": round(rate['kwh_per_pc_hour'] * on_hours_today, 3),
+                "Rp today": round(rate['cost_per_pc_hour'] * on_hours_today),
+            })
+
+        return build_excel_response(
+            sheet_title=f"Room {room_id}",
+            headers=["PC", "Status", "Last boot", "Last restart", "Last shutdown",
+                     "Uptime (current session)", "On-hours today", "kWh today", "Rp today"],
+            rows=rows,
+            filename=f"pc-logger-room-{room_id}-{datetime.now().strftime('%Y%m%d-%H%M%S')}.xlsx",
         )
 
 
@@ -163,6 +222,9 @@ def create_app():
         return render_template("monitoring.html", grafana_url=GRAFANA_URL)
 
     return app
+
+
+
 
 def format_date(value):
     if isinstance(value, str):
@@ -264,26 +326,16 @@ def update_metrics_once(top_n=20):
         cost_per_hour = rate['cost_per_pc_hour'] * stats['on']
         kwh_per_hour = rate['kwh_per_pc_hour'] * stats['on']
 
-        room_prefix = f"BN{room}%"
-        room_logs = PcLog.query.filter(PcLog.hostname.like(room_prefix)).order_by(PcLog.id.desc()).limit(5000).all()
-        room_logs = [d.to_dict() for d in room_logs]
-        room_pcs = build_pc_details(room_logs)
-        uptime_values = [p['uptime_hours'] for p in room_pcs if p.get('uptime_hours') is not None]
-        avg_uptime_hours = (sum(uptime_values) / len(uptime_values)) if uptime_values else 0.0
-        projected_cost = cost_per_hour * avg_uptime_hours
-
-        room_costs.append((cost_per_hour, kwh_per_hour, projected_cost, room))
+        room_costs.append((cost_per_hour, kwh_per_hour, room))
 
     room_costs.sort(reverse=True)
     top = room_costs[:top_n]
 
     pc_lab_cost_per_room.clear()
     pc_lab_kwh_per_room.clear()
-    pc_lab_projected_cost_per_room.clear()
-    for rank, (cost_per_hour, kwh_per_hour, projected_cost, room) in enumerate(top, start=1):
+    for rank, (cost_per_hour, kwh_per_hour, room) in enumerate(top, start=1):
         pc_lab_cost_per_room.labels(rank=str(rank), room=room).set(round(cost_per_hour, 2))
         pc_lab_kwh_per_room.labels(rank=str(rank), room=room).set(round(kwh_per_hour, 3))
-        pc_lab_projected_cost_per_room.labels(rank=str(rank), room=room).set(round(projected_cost, 2))
 
 
 
@@ -319,6 +371,59 @@ def build_room_status(pcs, rooms):
             'unknown': pcs_per_room - on_count - off_count,
         }
     return data
+
+
+def compute_today_on_seconds(logs):
+    indonesia_timezone = pytz.timezone('Asia/Jakarta')
+    now = datetime.now(indonesia_timezone).replace(tzinfo=None)
+    midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    per_host_events = {}
+    per_host_last_before_midnight = {}
+
+    for entry in logs:
+        hostname = entry.get('hostname', '')
+        if len(hostname) < 5 or not hostname[-5:].isdigit():
+            continue
+        event_type = entry.get('event_type')
+        created_at = parse_datetime(entry.get('created_at'))
+        if created_at is None:
+            continue
+
+        if created_at < midnight:
+            prev = per_host_last_before_midnight.get(hostname)
+            if prev is None or created_at > prev[0]:
+                per_host_last_before_midnight[hostname] = (created_at, event_type)
+            continue
+
+        if created_at > now:
+            continue
+
+        per_host_events.setdefault(hostname, []).append((created_at, event_type))
+
+    on_seconds = {}
+    hosts = set(per_host_events) | set(per_host_last_before_midnight)
+    for hostname in hosts:
+        events_today = sorted(per_host_events.get(hostname, []), key=lambda e: e[0])
+
+        last_before = per_host_last_before_midnight.get(hostname)
+        is_on = bool(last_before) and last_before[1] != "Shutdown"
+
+        cursor = midnight
+        accumulated = 0.0
+        for created_at, event_type in events_today:
+            if is_on and created_at > cursor:
+                accumulated += (created_at - cursor).total_seconds()
+            cursor = created_at
+            is_on = event_type != "Shutdown"
+
+        if is_on and now > cursor:
+            accumulated += (now - cursor).total_seconds()
+
+        if accumulated > 0:
+            on_seconds[hostname] = accumulated
+
+    return on_seconds
 
 
 def build_pc_details(logs):
@@ -413,9 +518,6 @@ def build_pc_details(logs):
     return pcs
 
 app = create_app()
-# Auto-create tables when running directly (dev convenience).
-# In production, use Flask-Migrate instead.
-print("NAME : ", __name__, flush=True)
 with app.app_context():
     db.create_all()
     try:

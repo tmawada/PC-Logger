@@ -8,3 +8,4 @@ python-dotenv==1.1.0
 gevent
 prometheus_flask_exporter
 pytz
+openpyxl==3.1.5
