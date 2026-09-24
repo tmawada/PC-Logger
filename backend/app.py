@@ -11,6 +11,11 @@ import time
 import pytz
 import sys
 import os
+import io
+from flask import Response
+from openpyxl import Workbook
+from openpyxl.styles import Font, Alignment
+from openpyxl.utils import get_column_letter
 from gevent.pywsgi import WSGIServer
 from prometheus_flask_exporter import PrometheusMetrics
 from prometheus_client import Gauge
@@ -224,7 +229,33 @@ def create_app():
     return app
 
 
+def build_excel_response(sheet_title, headers, rows, filename):
+    wb = Workbook()
+    ws = wb.active
+    ws.title = sheet_title[:31] if sheet_title else "Sheet1"
 
+    header_font = Font(bold=True)
+    for col_idx, header in enumerate(headers, start=1):
+        cell = ws.cell(row=1, column=col_idx, value=header)
+        cell.font = header_font
+        cell.alignment = Alignment(horizontal='center')
+
+    for row_idx, row in enumerate(rows, start=2):
+        for col_idx, header in enumerate(headers, start=1):
+            ws.cell(row=row_idx, column=col_idx, value=row.get(header))
+
+    for col_idx, header in enumerate(headers, start=1):
+        ws.column_dimensions[get_column_letter(col_idx)].width = 15
+
+    buffer = io.BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+
+    return Response(
+        buffer.getvalue(),
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
 
 def format_date(value):
     if isinstance(value, str):
