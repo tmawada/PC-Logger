@@ -384,3 +384,108 @@
       grid-template-columns: 1fr;
     }
   }
+
+  .range-export {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 18px 20px;
+    margin-top: 28px;
+  }
+
+  .range-export-header {
+    margin-bottom: 16px;
+  }
+
+  .range-export-title {
+    font-family: var(--sans);
+    font-size: 1rem;
+    font-weight: 500;
+    margin: 0 0 6px;
+    color: var(--text);
+  }
+
+  .range-export-desc {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    font-family: var(--sans);
+    line-height: 1.4;
+    margin: 0;
+    opacity: 0.85;
+  }
+
+  .range-export-form {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 14px;
+  }
+
+  .range-field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .range-field label {
+    font-size: 0.72rem;
+    font-family: var(--mono);
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .range-field input[type="datetime-local"] {
+    background: var(--surface-alt);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 0.85rem;
+    padding: 9px 12px;
+    border-radius: 4px;
+    outline: none;
+    transition: border-color 0.12s ease;
+  }
+
+  .range-field input[type="datetime-local"]:hover,
+  .range-field input[type="datetime-local"]:focus {
+    border-color: var(--accent);
+  }
+
+  .range-field input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+    cursor: pointer;
+    opacity: 0.6;
+    filter: invert(0.7);
+  }
+
+  :root[data-theme="light"] .range-field input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+    filter: none;
+  }
+
+  .range-export-btn {
+    font-size: 0.85rem;
+  }
+
+  .range-export-error {
+    margin-top: 12px;
+    font-size: 0.78rem;
+    font-family: var(--mono);
+    color: var(--off);
+  }
+
+  .range-export-error[hidden] {
+    display: none;
+  }
+
+  @media (max-width: 600px) {
+    .range-export-form {
+      flex-direction: column;
+      align-items: stretch;
+    }
+
+    .range-field input[type="datetime-local"],
+    .range-export-btn {
+      width: 100%;
+      justify-content: center;
+    }
+  }

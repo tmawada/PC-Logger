@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Room {{ room_id }}</title>
-  <link rel="stylesheet" href="/static/room_details.css?v=3">
+  <link rel="stylesheet" href="/static/room_details.css?v=4">
   <script>
     (function () {
       const t = localStorage.getItem('pclogger-theme');
@@ -91,6 +91,26 @@
       </div>
     </div>
 
+
+    <div class="range-export">
+      <div class="range-export-header">
+        <h2 class="range-export-title">Export by date range</h2>
+        <p class="range-export-desc">Pick a start and end date/time to download this room's PC list and cost figures for that period.</p>
+      </div>
+      <form class="range-export-form" id="rangeExportForm">
+        <div class="range-field">
+          <label for="rangeStart">From</label>
+          <input type="datetime-local" id="rangeStart" name="rangeStart" required>
+        </div>
+        <div class="range-field">
+          <label for="rangeEnd">To</label>
+          <input type="datetime-local" id="rangeEnd" name="rangeEnd" required>
+        </div>
+        <button type="submit" class="export-link range-export-btn" title="Download this room's PC list and cost figures for the selected range as an Excel file">Export range</button>
+      </form>
+      <div class="range-export-error" id="rangeExportError" hidden></div>
+    </div>
+
   </div>
 
   <div class="modal-overlay" id="modalOverlay" hidden>
@@ -164,6 +184,51 @@
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && !overlay.hidden) closeModal();
   });
+
+  (function () {
+    const form = document.getElementById('rangeExportForm');
+    if (!form) return;
+
+    const startInput = document.getElementById('rangeStart');
+    const endInput = document.getElementById('rangeEnd');
+    const errorEl = document.getElementById('rangeExportError');
+    const roomId = {{ room_id | tojson }};
+
+    function toBackendDate(localValue) {
+      if (!localValue) return '';
+      const [date, time] = localValue.split('T');
+      const hms = (time && time.length === 5) ? time + ':00' : time;
+      return date + ' ' + hms;
+    }
+
+    function showError(msg) {
+      errorEl.textContent = msg;
+      errorEl.hidden = false;
+    }
+
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      errorEl.hidden = true;
+
+      const start = startInput.value;
+      const end = endInput.value;
+
+      if (!start || !end) {
+        showError('Please choose both a start and end date/time.');
+        return;
+      }
+      if (new Date(start) > new Date(end)) {
+        showError('The start date/time must be before the end date/time.');
+        return;
+      }
+
+      const startStr = toBackendDate(start);
+      const endStr = toBackendDate(end);
+      const url = '/main/room/' + encodeURIComponent(roomId) +
+        '/export/' + encodeURIComponent(startStr) + 'to' + encodeURIComponent(endStr);
+      window.location.href = url;
+    });
+  })();
 </script>
 
 </body>

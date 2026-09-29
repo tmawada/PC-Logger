@@ -5,7 +5,7 @@ from config import Config
 from database import init_db, db
 from routes import api
 from models import PcLog
-from datetime import datetime
+from datetime import datetime, timedelta
 import threading
 import time
 import pytz
@@ -221,6 +221,41 @@ def create_app():
             filename=f"pc-logger-room-{room_id}-{datetime.now().strftime('%Y%m%d-%H%M%S')}.xlsx",
         )
 
+
+    @app.route("/main/room/<room_id>/export/<start_date>to<end_date>")
+    def export_room_ranged(room_id, start_date, end_date):
+        room_prefix = f"BN{room_id}%"
+
+        room_id_data = PcLog.query.filter(PcLog.hostname.like(room_prefix)).filter(PcLog.received_at.between(start_date, end_date)).order_by(PcLog.id.desc()).limit(5000).all()
+
+        room_id_data = [d.to_dict() for d in room_id_data]
+        pcs = build_pc_details(room_id_data, range_start=start_date, range_end=end_date)
+        rate = get_room_rate(room_id)
+        range_on_seconds = compute_on_seconds_in_range(room_id_data, start_date, end_date)
+
+        rows = []
+        for pc in pcs:
+            hostname = f"BN{room_id}{pc['pcnum']:02d}"
+            on_hours_range = range_on_seconds.get(hostname, 0.0) / 3600.0
+            rows.append({
+                "PC": pc['pcnum'],
+                "Status": pc['status'],
+                "Last boot": pc['last_boot'],
+                "Last restart": pc['last_restart'],
+                "Last shutdown": pc['last_off'],
+                "Total uptime in range": pc['total_uptime'] or '',
+                "On-hours in range": round(on_hours_range, 2),
+                "kWh in range": round(rate['kwh_per_pc_hour'] * on_hours_range, 3),
+                "Rp in range": round(rate['cost_per_pc_hour'] * on_hours_range),
+            })
+
+        return build_excel_response(
+            sheet_title=f"Room {room_id}",
+            headers=["PC", "Status", "Last boot", "Last restart", "Last shutdown",
+                    "Total uptime in range", "On-hours in range", "kWh in range", "Rp in range"],
+            rows=rows,
+            filename=f"pc-logger-room-{room_id}-{start_date}-{end_date}.xlsx",
+        )
 
     @app.route("/monitoring")
     def monitoring():
@@ -457,7 +492,63 @@ def compute_today_on_seconds(logs):
     return on_seconds
 
 
-def build_pc_details(logs):
+def compute_on_seconds_in_range(logs, range_start, range_end):
+    range_start = parse_datetime(range_start)
+    range_end = parse_datetime(range_end)
+    if range_start is None or range_end is None:
+        return {}
+    if range_end < range_start:
+        range_start, range_end = range_end, range_start
+
+    per_host_events = {}
+    per_host_last_before_start = {}
+
+    for entry in logs:
+        hostname = entry.get('hostname', '')
+        if len(hostname) < 5 or not hostname[-5:].isdigit():
+            continue
+        event_type = entry.get('event_type')
+        created_at = parse_datetime(entry.get('created_at'))
+        if created_at is None:
+            continue
+
+        if created_at < range_start:
+            prev = per_host_last_before_start.get(hostname)
+            if prev is None or created_at > prev[0]:
+                per_host_last_before_start[hostname] = (created_at, event_type)
+            continue
+
+        if created_at > range_end:
+            continue
+
+        per_host_events.setdefault(hostname, []).append((created_at, event_type))
+
+    on_seconds = {}
+    hosts = set(per_host_events) | set(per_host_last_before_start)
+    for hostname in hosts:
+        events_in_range = sorted(per_host_events.get(hostname, []), key=lambda e: e[0])
+
+        last_before = per_host_last_before_start.get(hostname)
+        is_on = bool(last_before) and last_before[1] != "Shutdown"
+
+        cursor = range_start
+        accumulated = 0.0
+        for created_at, event_type in events_in_range:
+            if is_on and created_at > cursor:
+                accumulated += (created_at - cursor).total_seconds()
+            cursor = created_at
+            is_on = event_type != "Shutdown"
+
+        if is_on and range_end > cursor:
+            accumulated += (range_end - cursor).total_seconds()
+
+        if accumulated > 0:
+            on_seconds[hostname] = accumulated
+
+    return on_seconds
+
+
+def build_pc_details(logs, range_start=None, range_end=None):
     per_host = {}
     for entry in logs:
         hostname = entry.get('hostname', '')
@@ -489,8 +580,13 @@ def build_pc_details(logs):
     indonesia_timezone = pytz.timezone('Asia/Jakarta')
     time_raw =  datetime.now(indonesia_timezone)
     now = time_raw.replace(tzinfo=None)
+
+    range_on_seconds = {}
+    if range_start is not None and range_end is not None:
+        range_on_seconds = compute_on_seconds_in_range(logs, range_start, range_end)
+
     by_pcnum = {}
-    for host in per_host.values():
+    for hostname, host in per_host.items():
         last_boot = host['last_boot']
         last_restart = host['last_restart']
         last_off = host['last_off']
@@ -523,15 +619,27 @@ def build_pc_details(logs):
         else:
             label = 'No recent log'
 
+        total_seconds = range_on_seconds.get(hostname)
+        total_uptime = None
+        total_uptime_hours = None
+        if total_seconds is not None:
+            total_uptime_hours = total_seconds / 3600
+            total_uptime = format_duration(timedelta(seconds=total_seconds))
+
         by_pcnum[host['pcnum']] = {
             'pcnum': host['pcnum'],
             'status': status,
             'label': label,
+            'raw_last_boot': last_boot,
+            'raw_last_restart': last_restart,
+            'raw_last_off': last_off,
             'last_boot': format_date(last_boot) or 'No boot log',
             'last_restart': format_date(last_restart) or 'No restart log',
             'last_off': format_date(last_off) or 'No shutdown log',
             'uptime': uptime,
             'uptime_hours': uptime_hours,
+            'total_uptime': total_uptime,
+            'total_uptime_hours': total_uptime_hours,
         }
 
     pcs = []
@@ -545,6 +653,8 @@ def build_pc_details(logs):
             'last_off': 'No shutdown log',
             'uptime': None,
             'uptime_hours': None,
+            'total_uptime': None,
+            'total_uptime_hours': None,
         })
     return pcs
 
