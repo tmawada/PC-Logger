@@ -257,6 +257,48 @@ def create_app():
             filename=f"pc-logger-room-{room_id}-{start_date}-{end_date}.xlsx",
         )
 
+    @app.route("/main/export/<start_date>to<end_date>")
+    def export_main_ranged(start_date, end_date):
+        pcs = PcLog.query.order_by(PcLog.id.desc()).limit(3000).all()
+        pcs = [p.to_dict() for p in pcs]
+        rooms_data = build_room_status(pcs, rooms)
+        total_cost = 0
+        rows = []
+        for room in rooms:
+            stats = rooms_data.get(room, {'on': 0, 'off': 0, 'unknown': pcs_per_room})
+            rate = get_room_rate(room)
+
+            room_prefix = f"BN{room}%"
+            room_logs = PcLog.query.filter(PcLog.hostname.like(room_prefix)).filter(PcLog.received_at.between(start_date, end_date)).order_by(PcLog.id.desc()).limit(5000).all()
+            
+            room_logs = [d.to_dict() for d in room_logs]
+            today_on_seconds = compute_today_on_seconds(room_logs)
+            room_on_hours_today = sum(today_on_seconds.values()) / 3600.0
+            cost_today = round(rate['cost_per_pc_hour'] * room_on_hours_today)
+            total_cost = cost_today + total_cost
+            rows.append({
+                "Room": room,
+                "Rp/hour": round(rate['cost_per_pc_hour'] * stats['on']),
+                "kWh/hour": round(rate['kwh_per_pc_hour'] * stats['on'], 3),
+                # "On-hours total": round(room_on_hours_today, 2),
+                "kWh total": round(rate['kwh_per_pc_hour'] * room_on_hours_today, 3),
+                "Rp total": round(rate['cost_per_pc_hour'] * room_on_hours_today),
+            })
+        rows.append({
+            "Room": "TOTAL",
+            "Rp total": total_cost,
+        })
+        return build_excel_response(
+            sheet_title="All Rooms",
+            headers=["Room","Rp/hour)",
+                     "kWh/hour", 
+                     # "On-hours today (sum, all PCs)", 
+                     "kWh total", 
+                     "Rp total"],
+            rows=rows,
+            filename=f"pc-logger-rooms-{datetime.now().strftime('%Y%m%d-%H%M%S')}.xlsx",
+        )
+
     @app.route("/monitoring")
     def monitoring():
         return render_template("monitoring.html", grafana_url=GRAFANA_URL)
