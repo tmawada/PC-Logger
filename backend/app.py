@@ -11,6 +11,7 @@ import time
 import pytz
 import sys
 import os
+import traceback
 import io
 from flask import Response
 from openpyxl import Workbook
@@ -19,6 +20,7 @@ from openpyxl.utils import get_column_letter
 from gevent.pywsgi import WSGIServer
 from prometheus_flask_exporter import PrometheusMetrics
 from prometheus_client import Gauge
+
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "model"))
 from seed import ROOM_RATES, get_room_rate, seed_data  # noqa: E402
@@ -65,8 +67,8 @@ def create_app():
     metrics = PrometheusMetrics(app)
     try:
         init_db(app)
-    except:
-        print("[INFO] DB FAILED TO CONNECT")
+    except Exception:
+        traceback.print_exc()
     app.register_blueprint(api)
 
     @app.route("/main")
@@ -305,6 +307,14 @@ def create_app():
 
     return app
 
+app = create_app()
+with app.app_context():
+    db.create_all()
+    try:
+        seed_data()
+    except Exception:
+        import traceback
+        traceback.print_exc()
 
 def build_excel_response(sheet_title, headers, rows, filename):
     wb = Workbook()
@@ -700,14 +710,7 @@ def build_pc_details(logs, range_start=None, range_end=None):
         })
     return pcs
 
-app = create_app()
-with app.app_context():
-    db.create_all()
-    try:
-        seed_data()
-    except Exception:
-        import traceback
-        traceback.print_exc()
+
 
 def update_metrics_loop():
     while True:

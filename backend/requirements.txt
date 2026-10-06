@@ -9,3 +9,4 @@ gevent
 prometheus_flask_exporter
 pytz
 openpyxl==3.1.5
+psycopg[binary]
