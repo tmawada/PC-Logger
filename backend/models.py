@@ -9,7 +9,7 @@ class PcLog(db.Model):
     hostname = db.Column(db.String(100), nullable=False, index=True)
     event_type = db.Column(db.String(30), nullable=False, index=True)
     message = db.Column(db.Text, nullable=True)
-    created_at = db.Column(db.DateTime, nullable=False)
+    created_at = db.Column(db.DateTime, nullable=False, index=True)
     received_at = db.Column(
         db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc)
     )

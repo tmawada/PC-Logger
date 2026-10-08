@@ -1,4 +1,3 @@
-import socket
 from datetime import datetime, timezone
 from flask import Blueprint, request, jsonify
 from database import db
@@ -7,6 +6,15 @@ from models import PcLog
 api = Blueprint("api", __name__, url_prefix="/api")
 
 VALID_EVENT_TYPES = {"Boot", "Shutdown", "Restart", "Crash", "Wake", "Sleep"}
+
+
+@api.route("/health", methods=["GET"])
+def health_check():
+    """
+    Lightweight health check endpoint for Docker / load balancer.
+    Returns 200 OK without running expensive DB queries.
+    """
+    return jsonify({"status": "ok"}), 200
 
 
 @api.route("/log", methods=["POST"])
@@ -22,7 +30,7 @@ def create_log():
         "created_at": "2026-08-06T08:00:00"
     }
     """
-    socket.setdefaulttimeout(10)
+    # socket.setdefaulttimeout(10)
     data = request.get_json(silent=True)
 
     if not data:
