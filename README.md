@@ -1,7 +1,4 @@
-# PC-Logger — Project Context
-
-> Onboarding doc for AI agents / new contributors. Read this instead of re-reading every file.
-> Last synced: 2026-09-16. If code and this doc disagree, the code wins — please update this file.
+# PC-Logger
 
 ---
 
@@ -13,9 +10,6 @@
 **Why it exists:** the lab PCs run Windows **Unified Write Filter (UWF)**, so the Windows Event Log
 is wiped on every reboot. Event Viewer cannot be a permanent history. A PowerShell agent therefore
 POSTs each event to a Flask backend at the moment it happens. **The backend is the single source of truth.**
-
-Language note: `IMPLEMENTATION.MD` (the original design doc) is written in Indonesian.
-`Ctt.txt` is a scratch notes file (raw thoughts, PowerShell snippets, schema draft) — not authoritative.
 
 ---
 
