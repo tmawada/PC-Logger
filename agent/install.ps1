@@ -3,7 +3,7 @@ param()
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-# --- Requires admin (tasks + HKLM + UWF) ---
+# --- Requires admin (tasks + HKLM) ---
 $principal = New-Object Security.Principal.WindowsPrincipal(
     [Security.Principal.WindowsIdentity]::GetCurrent())
 if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
@@ -39,30 +39,6 @@ foreach ($file in $filesToCopy) {
         Copy-Item -Path $sourcePath -Destination $installDir -Force
     }
 }
-
-# UWF: the cache outbox must survive reboot, otherwise failed
-# shutdown-time sends are wiped before Boot can flush them.
-# Takes effect after next reboot. Harmless when uwfmgr is absent.
-function Add-UwfExclusion {
-    param([string]$Path)
-    try {
-        $null = Get-Command uwfmgr.exe -ErrorAction Stop
-        $existing = & uwfmgr.exe file get-exclusions 2>$null
-        if ($existing -match [regex]::Escape($Path)) {
-            Write-Host "[OK] UWF exclusion already present: $Path"
-            return
-        }
-        & uwfmgr.exe file add-exclusion $Path 2>$null | Out-Null
-        if ($LASTEXITCODE -eq 0) {
-            Write-Host "[OK] UWF exclusion added: $Path (takes effect after reboot)"
-        } else {
-            Write-Warning "uwfmgr add-exclusion failed (exit $LASTEXITCODE), continuing"
-        }
-    } catch {
-        Write-Host "[SKIP] uwfmgr not available, skipping UWF exclusion"
-    }
-}
-Add-UwfExclusion -Path $installDir
 
 $agentPath = Join-Path $installDir 'agent.ps1'
 $shutdownWrapperPath = Join-Path $installDir 'PCLogger-Shutdown.cmd'
@@ -177,7 +153,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$agentPath" -EventType 
 if %errorlevel% neq 0 (
     echo Agent failed to send log, but continuing with shutdown...
 )
-shutdown -s -f -t 30
+shutdown -s -f -t 5
 "@
 Set-Content -Path $shutdownWrapperPath -Value $shutdownWrapperContent -Encoding ASCII
 
@@ -187,10 +163,10 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$agentPath" -EventType 
 if %errorlevel% neq 0 (
     echo Agent failed to send log, but continuing with restart...
 )
-shutdown -r -f -t 30
+shutdown -r -f -t 5
 "@
 Set-Content -Path $restartWrapperPath -Value $restartWrapperContent -Encoding ASCII
 
 Write-Host ""
 Write-Host "=== Agent installation complete ===" -ForegroundColor Green
-Write-Host "Reboot once so the UWF exclusion and scheduled tasks take effect."
+Write-Host "Reboot once so scheduled tasks take effect."
