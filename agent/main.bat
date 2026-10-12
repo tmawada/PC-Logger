@@ -49,7 +49,7 @@ echo - Boot events (scheduled task at startup)
 echo - Restart/Shutdown from Start menu, hotkeys, GPO (Event ID 1074 watcher)
 echo - Restart/Shutdown from manual wrappers (PCLogger-*.cmd)
 echo.
-echo NOTE: reboot once so the UWF exclusion and tasks take effect.
+echo NOTE: reboot once so scheduled tasks take effect.
 echo.
 echo To verify the event monitor is running:
 echo   schtasks /query /tn PCLoggerEventMonitor

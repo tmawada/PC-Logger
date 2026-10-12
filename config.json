@@ -1,0 +1,6 @@
+{
+  "api_url": "http://127.0.0.1:5000/log",
+  "timeout": 5,
+  "retry": 3,
+  "startup_delay": 2
+}

@@ -35,7 +35,7 @@ pcs_per_room = 41
 events = {'boot', 'restart'}
 
 
-GRAFANA_URL = "http://10.22.65.114:3000/d/pc-logging-overview/pc-logging-overview?kiosk"
+GRAFANA_URL = os.getenv("GRAFANA_URL")
 
 lab_pcs_status = Gauge(
     'lab_pcs_status', 'Current PC status count per room', ['room', 'status']

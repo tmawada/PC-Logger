@@ -12,10 +12,12 @@ set "AGENT_DIR=C:\ProgramData\PCLoggerAgent"
 
 rem --- Backend URL comes from the deployed config, not hardcoded ---
 set "API_URL="
-if exist "%AGENT_DIR%\config.json" (
-    for /f "delims=" %%U in ('powershell -NoProfile -Command "(Get-Content '%AGENT_DIR%\config.json' -Raw ^| ConvertFrom-Json).api_url" 2^>nul') do set "API_URL=%%U"
+set "CONFIG_FILE=%AGENT_DIR%\config.json"
+if not exist "%CONFIG_FILE%" set "CONFIG_FILE=%~dp0config.json"
+if exist "%CONFIG_FILE%" (
+    for /f "delims=" %%U in ('powershell -NoProfile -Command "(Get-Content -LiteralPath '%CONFIG_FILE%' -Raw | ConvertFrom-Json).api_url" 2^>nul') do set "API_URL=%%U"
 )
-if not defined API_URL set "API_URL=http://10.22.65.146/api/log"
+
 
 set "PASS=0"
 set "FAIL=0"

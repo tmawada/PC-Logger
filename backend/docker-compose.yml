@@ -27,11 +27,11 @@ services:
       timeout: 5s
       retries: 5
 
-  backend1:
+  backend:
 
     build: .
 
-    container_name: lab-backend1
+    container_name: pc-logger-backend
 
     restart: always
 
@@ -58,68 +58,6 @@ services:
           cpus: '0.5'
           memory: 512M
 
-  # backend2:
-
-  #   build: .
-
-  #   container_name: lab-backend2
-
-  #   restart: always
-
-  #   depends_on:
-  #     postgres:
-  #       condition: service_healthy
-
-  #   environment:
-  #     DB_HOST: ${DB_HOST}
-  #     DB_NAME: ${DB_NAME}
-  #     DB_USER: ${DB_USER}
-  #     DB_PASSWORD: ${DB_PASSWORD}
-
-  #   healthcheck:
-  #     test: ["CMD", "curl", "-f", "http://localhost:5000/api/status"]
-  #     interval: 30s
-  #     timeout: 10s
-  #     retries: 3
-  #     start_period: 10s
-
-  #   deploy:
-  #     resources:
-  #       limits:
-  #         cpus: '0.5'
-  #         memory: 512M
-
-  # backend3:
-
-  #   build: .
-
-  #   container_name: lab-backend3
-
-  #   restart: always
-
-  #   depends_on:
-  #     postgres:
-  #       condition: service_healthy
-
-  #   environment:
-  #     DB_HOST: ${DB_HOST}
-  #     DB_NAME: ${DB_NAME}
-  #     DB_USER: ${DB_USER}
-  #     DB_PASSWORD: ${DB_PASSWORD}
-
-  #   healthcheck:
-  #     test: ["CMD", "curl", "-f", "http://localhost:5000/api/status"]
-  #     interval: 30s
-  #     timeout: 10s
-  #     retries: 3
-  #     start_period: 10s
-
-    # deploy:
-    #   resources:
-    #     limits:
-    #       cpus: '0.5'
-    #       memory: 512M
-
   nginx:
     image: nginx:alpine
     container_name: lab-nginx
@@ -131,7 +69,7 @@ services:
     environment:
       TZ: "Asia/Jakarta"
     depends_on:
-      - backend1
+      - backend
 
   pgadmin:
     image: dpage/pgadmin4
