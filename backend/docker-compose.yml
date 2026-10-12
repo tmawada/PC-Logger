@@ -172,6 +172,7 @@ services:
       - GF_AUTH_ANONYMOUS_ORG_NAME=Main Org.
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
       - GF_FEATURE_TOGGLES_ENABLE=publicDashboards
+      - GF_LIVE_ALLOWED_ORIGINS=*
     restart: unless-stopped
 
 volumes:
